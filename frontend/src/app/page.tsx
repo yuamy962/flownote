@@ -27,9 +27,9 @@ export default function Home() {
           </div>
           <nav className="flex items-center gap-6 text-sm text-gray-600">
             <a href="#features" className="hover:text-blue-600">功能</a>
-            <a href="#pricing" className="hover:text-blue-600">定价</a>
-            <a href="#" className="hover:text-blue-600">登录</a>
-            <a href="#" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+            <a href="/pricing" className="hover:text-blue-600">定价</a>
+            <a href="/login" className="hover:text-blue-600">登录</a>
+            <a href="/register" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
               免费开始
             </a>
           </nav>
@@ -115,25 +115,25 @@ export default function Home() {
               <h3 className="font-semibold text-gray-900 mb-1">免费版</h3>
               <div className="text-3xl font-bold text-gray-900 mb-1">¥0</div>
               <p className="text-sm text-gray-500 mb-4">每月 60 分钟</p>
-              <button className="w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium">
+              <a href="/register" className="block w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium text-center">
                 免费开始
-              </button>
+              </a>
             </div>
             <div className="p-6 rounded-2xl border border-blue-200 bg-blue-50/50 shadow-lg shadow-blue-100 text-center">
               <h3 className="font-semibold text-gray-900 mb-1">基础版</h3>
               <div className="text-3xl font-bold text-gray-900 mb-1">¥15</div>
               <p className="text-sm text-gray-500 mb-4">每月 5 小时</p>
-              <button className="w-full py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium">
+              <a href="/register" className="block w-full py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium text-center">
                 立即订阅
-              </button>
+              </a>
             </div>
             <div className="p-6 rounded-2xl border border-gray-100 bg-white text-center">
               <h3 className="font-semibold text-gray-900 mb-1">专业版</h3>
               <div className="text-3xl font-bold text-gray-900 mb-1">¥29</div>
               <p className="text-sm text-gray-500 mb-4">每月 20 小时</p>
-              <button className="w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium">
+              <a href="/register" className="block w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium text-center">
                 立即订阅
-              </button>
+              </a>
             </div>
           </div>
         </section>
