@@ -2,12 +2,15 @@
 
 import { useState } from 'react';
 import { Video, Upload, Link, Lock, Clock, Zap, AlertCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 export default function Dashboard() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'link' | 'upload'>('link');
   const [url, setUrl] = useState('');
   const [videoInfo, setVideoInfo] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleParse = async () => {
     if (!url.trim()) return;
@@ -143,9 +146,38 @@ export default function Dashboard() {
                     <div className="text-sm text-gray-500">
                       预计消耗时长：<span className="font-medium text-gray-900">{Math.ceil(videoInfo.duration / 60)} 分钟</span>
                     </div>
-                    <a href="/dashboard/processing" className="inline-block px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
-                      开始转录
-                    </a>
+                    <button
+                      onClick={async () => {
+                        if (!url.trim()) return;
+                        setSubmitting(true);
+                        try {
+                          const res = await fetch('/api/tasks', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: url.trim() }),
+                          });
+                          const json = await res.json();
+                          if (json.code !== 0) {
+                            alert(json.detail || '提交失败');
+                            setSubmitting(false);
+                            return;
+                          }
+                          const task = json.data;
+                          if (task.status === 'done') {
+                            router.push(`/dashboard/result?id=${task.id}`);
+                          } else {
+                            router.push(`/dashboard/processing?id=${task.id}`);
+                          }
+                        } catch (err: any) {
+                          alert('网络错误: ' + err.message);
+                        }
+                        setSubmitting(false);
+                      }}
+                      disabled={submitting}
+                      className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                    >
+                      {submitting ? '提交中...' : '开始转录'}
+                    </button>
                   </div>
                 </div>
               </div>
