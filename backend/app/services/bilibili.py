@@ -29,7 +29,7 @@ async def fetch_video_info(bvid: str) -> dict:
 
 
 async def fetch_subtitle_list(bvid: str, cid: int) -> list:
-    """获取字幕列表"""
+    """获取字幕列表（包含 AI 自动生成字幕）"""
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(
             "https://api.bilibili.com/x/player/v2",
@@ -43,8 +43,11 @@ async def fetch_subtitle_list(bvid: str, cid: int) -> list:
         data = resp.json()
         if data.get("code") != 0:
             return []
-        subtitles = data.get("data", {}).get("subtitle", {}).get("subtitles", [])
-        return subtitles
+        subtitle_data = data.get("data", {}).get("subtitle", {})
+        # 合并人工字幕和 AI 自动生成字幕
+        subtitles = subtitle_data.get("subtitles", [])
+        ai_subtitles = subtitle_data.get("ai_subtitles", [])
+        return subtitles + ai_subtitles
 
 
 async def fetch_subtitle_content(subtitle_url: str) -> list[dict]:

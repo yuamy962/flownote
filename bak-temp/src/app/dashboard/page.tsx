@@ -1,8 +1,41 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Video, Upload, Link, Lock, Clock, Zap, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+
+function UserInfo() {
+  const [user, setUser] = useState<any>(null);
+  useEffect(() => {
+    const raw = localStorage.getItem('user');
+    if (raw) {
+      try {
+        setUser(JSON.parse(raw));
+      } catch {
+        setUser(null);
+      }
+    }
+  }, []);
+  if (!user) {
+    return <a href="/login" className="text-gray-600 hover:text-gray-900">登录</a>;
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-gray-500">{user.email}</span>
+      <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{user.plan === 'free' ? '免费版' : user.plan}</span>
+      <button
+        onClick={() => {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          window.location.reload();
+        }}
+        className="text-gray-400 hover:text-red-600 text-xs"
+      >
+        退出
+      </button>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const router = useRouter();
@@ -55,7 +88,7 @@ export default function Dashboard() {
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-gray-500">剩余 60 分钟</span>
+            <UserInfo />
             <a href="/pricing" className="text-blue-600 hover:underline">升级</a>
           </div>
         </div>
