@@ -3,7 +3,12 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from app.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt 限制 72 字节，truncate_error=False 让 passlib 自动截断而不是报错
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__truncate_error=False,
+)
 
 ALGORITHM = "HS256"
 
