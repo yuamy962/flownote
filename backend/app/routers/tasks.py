@@ -1,8 +1,10 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Task
 from app.services.bilibili import parse_bilibili_url
+from app.services.deepseek import generate_notes
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -33,6 +35,17 @@ async def create_task(payload: dict, db: Session = Depends(get_db)):
         processing_path="subtitle" if result["has_subtitle"] else "gpu",
         transcript=result["subtitle_text"] if result["has_subtitle"] else None,
     )
+
+    # 如果有字幕，直接调用 DeepSeek 生成总结和笔记
+    if result["has_subtitle"] and result["subtitle_text"]:
+        try:
+            ai_result = await generate_notes(result["subtitle_text"])
+            task.summary = json.dumps(ai_result.get("summary", {}), ensure_ascii=False)
+            task.notes = ai_result.get("notes", "")
+        except Exception as e:
+            # AI 生成失败不影响主流程，记录错误即可
+            task.error_message = f"AI 生成失败: {str(e)}"
+
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -65,7 +78,7 @@ def get_task(task_id: str, db: Session = Depends(get_db)):
             "duration": task.duration,
             "status": task.status,
             "transcript": task.transcript,
-            "summary": task.summary,
+            "summary": json.loads(task.summary) if task.summary else None,
             "notes": task.notes,
             "error_message": task.error_message,
             "created_at": task.created_at.isoformat() if task.created_at else None,

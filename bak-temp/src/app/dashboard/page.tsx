@@ -2,26 +2,33 @@
 
 import { useState } from 'react';
 import { Video, Upload, Link, Lock, Clock, Zap, AlertCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 export default function Dashboard() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'link' | 'upload'>('link');
   const [url, setUrl] = useState('');
   const [videoInfo, setVideoInfo] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleParse = async () => {
     if (!url.trim()) return;
     setLoading(true);
-    setTimeout(() => {
-      setVideoInfo({
-        title: 'Python爬虫从入门到实战',
-        duration: 3600,
-        cover: 'https://via.placeholder.com/320x180',
-        uploader: '技术小哥',
-        hasSubtitle: true,
-      });
-      setLoading(false);
-    }, 1500);
+    setVideoInfo(null);
+    try {
+      const res = await fetch(`/api/parse-bilibili?url=${encodeURIComponent(url.trim())}`);
+      const json = await res.json();
+      if (json.code !== 0) {
+        alert(json.message || '解析失败');
+        setLoading(false);
+        return;
+      }
+      setVideoInfo(json.data);
+    } catch (err: any) {
+      alert('网络错误: ' + err.message);
+    }
+    setLoading(false);
   };
 
   const formatDuration = (seconds: number) => {
@@ -34,15 +41,22 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gray-50">
       <header className="border-b bg-white">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Video className="w-5 h-5 text-white" />
-            </div>
-            <span className="font-bold text-lg">FlowNote</span>
-          </a>
+          <div className="flex items-center gap-6">
+            <a href="/" className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <Video className="w-5 h-5 text-white" />
+              </div>
+              <span className="font-bold text-lg">FlowNote</span>
+            </a>
+            <nav className="hidden sm:flex items-center gap-1 text-sm">
+              <a href="/dashboard" className="px-3 py-1.5 text-blue-600 bg-blue-50 rounded-lg font-medium">工作台</a>
+              <a href="/dashboard/history" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">历史记录</a>
+              <a href="/dashboard/profile" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">用户中心</a>
+            </nav>
+          </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-gray-500">剩余 60 分钟</span>
-            <a href="#" className="text-blue-600 hover:underline">升级</a>
+            <a href="/pricing" className="text-blue-600 hover:underline">升级</a>
           </div>
         </div>
       </header>
@@ -97,8 +111,12 @@ export default function Dashboard() {
             {videoInfo && (
               <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
                 <div className="flex gap-4">
-                  <div className="w-40 h-24 bg-gray-200 rounded-xl flex-shrink-0 overflow-hidden">
-                    <img src={videoInfo.cover} alt="" className="w-full h-full object-cover" />
+                  <div className="w-40 h-24 bg-gradient-to-br from-blue-100 to-blue-50 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden">
+                    {videoInfo.cover ? (
+                      <img src={videoInfo.cover} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-2xl font-bold text-blue-300">{videoInfo.title?.[0] || '▶'}</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-gray-900 mb-1 truncate">{videoInfo.title}</h3>
@@ -128,8 +146,37 @@ export default function Dashboard() {
                     <div className="text-sm text-gray-500">
                       预计消耗时长：<span className="font-medium text-gray-900">{Math.ceil(videoInfo.duration / 60)} 分钟</span>
                     </div>
-                    <button className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
-                      开始转录
+                    <button
+                      onClick={async () => {
+                        if (!url.trim()) return;
+                        setSubmitting(true);
+                        try {
+                          const res = await fetch('/api/tasks', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: url.trim() }),
+                          });
+                          const json = await res.json();
+                          if (json.code !== 0) {
+                            alert(json.detail || '提交失败');
+                            setSubmitting(false);
+                            return;
+                          }
+                          const task = json.data;
+                          if (task.status === 'done') {
+                            router.push(`/dashboard/result?id=${task.id}`);
+                          } else {
+                            router.push(`/dashboard/processing?id=${task.id}`);
+                          }
+                        } catch (err: any) {
+                          alert('网络错误: ' + err.message);
+                        }
+                        setSubmitting(false);
+                      }}
+                      disabled={submitting}
+                      className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                    >
+                      {submitting ? '提交中...' : '开始转录'}
                     </button>
                   </div>
                 </div>
