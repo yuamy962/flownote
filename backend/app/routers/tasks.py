@@ -1,20 +1,35 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Task
+from app.models import Task, User
 from app.services.bilibili import parse_bilibili_url
 from app.services.deepseek import generate_notes
+from app.services.auth import decode_token
+from app.tasks import transcribe_video
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
+def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="缺少 Token")
+    token = authorization.replace("Bearer ", "")
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Token 无效或已过期")
+    user = db.query(User).filter(User.id == payload.get("sub")).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在")
+    return user
+
+
 @router.post("")
-async def create_task(payload: dict, db: Session = Depends(get_db)):
-    """
-    提交视频处理任务
-    payload: { "url": "https://www.bilibili.com/video/BVxxx" }
-    """
+async def create_task(
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     url = payload.get("url", "")
     if not url:
         raise HTTPException(status_code=400, detail="缺少 url 参数")
@@ -24,9 +39,8 @@ async def create_task(payload: dict, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"解析失败: {str(e)}")
 
-    # 创建任务记录
     task = Task(
-        user_id="anonymous",  # TODO: 接入 JWT 后改为真实 user_id
+        user_id=user.id,
         source_type="bilibili",
         source_url=url,
         title=result["title"],
@@ -36,19 +50,21 @@ async def create_task(payload: dict, db: Session = Depends(get_db)):
         transcript=result["subtitle_text"] if result["has_subtitle"] else None,
     )
 
-    # 如果有字幕，直接调用 DeepSeek 生成总结和笔记
     if result["has_subtitle"] and result["subtitle_text"]:
         try:
             ai_result = await generate_notes(result["subtitle_text"])
             task.summary = json.dumps(ai_result.get("summary", {}), ensure_ascii=False)
             task.notes = ai_result.get("notes", "")
         except Exception as e:
-            # AI 生成失败不影响主流程，记录错误即可
             task.error_message = f"AI 生成失败: {str(e)}"
 
     db.add(task)
     db.commit()
     db.refresh(task)
+
+    # 无字幕视频触发 GPU 转录任务
+    if not result["has_subtitle"]:
+        transcribe_video.delay(task.id, url)
 
     return {
         "code": 0,
@@ -66,8 +82,8 @@ async def create_task(payload: dict, db: Session = Depends(get_db)):
 
 
 @router.get("/{task_id}")
-def get_task(task_id: str, db: Session = Depends(get_db)):
-    task = db.query(Task).filter(Task.id == task_id).first()
+def get_task(task_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == user.id).first()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     return {
@@ -88,10 +104,22 @@ def get_task(task_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("")
-def list_tasks(page: int = 1, size: int = 20, db: Session = Depends(get_db)):
+def list_tasks(
+    page: int = 1,
+    size: int = 20,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     offset = (page - 1) * size
-    tasks = db.query(Task).order_by(Task.created_at.desc()).offset(offset).limit(size).all()
-    total = db.query(Task).count()
+    tasks = (
+        db.query(Task)
+        .filter(Task.user_id == user.id)
+        .order_by(Task.created_at.desc())
+        .offset(offset)
+        .limit(size)
+        .all()
+    )
+    total = db.query(Task).filter(Task.user_id == user.id).count()
     return {
         "code": 0,
         "data": {
@@ -114,8 +142,8 @@ def list_tasks(page: int = 1, size: int = 20, db: Session = Depends(get_db)):
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: str, db: Session = Depends(get_db)):
-    task = db.query(Task).filter(Task.id == task_id).first()
+def delete_task(task_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == user.id).first()
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     db.delete(task)

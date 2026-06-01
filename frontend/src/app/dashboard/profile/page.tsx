@@ -1,12 +1,44 @@
 'use client';
 
-import { useState } from 'react';
-import { Video, LogOut, Mail, Crown, Clock, Users, ChevronRight, Gift } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Video, User, Mail, Zap, Clock, Package, Crown, Loader2 } from 'lucide-react';
+
+interface UserData {
+  email: string;
+  plan: string;
+  monthly_minutes: number;
+  used_minutes: number;
+}
+
+const plans: Record<string, { name: string; color: string; icon: typeof Package }> = {
+  free: { name: '免费版', color: 'text-gray-600 bg-gray-100', icon: Package },
+  pro: { name: '专业版', color: 'text-blue-600 bg-blue-50', icon: Zap },
+  unlimited: { name: '无限版', color: 'text-amber-600 bg-amber-50', icon: Crown },
+};
 
 export default function ProfilePage() {
-  const [usedMinutes] = useState(42);
-  const totalMinutes = 60;
-  const usagePercent = (usedMinutes / totalMinutes) * 100;
+  const [user, setUser] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    fetch('/api/auth/me', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.code === 0) {
+          setUser(json.data);
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const plan = user ? plans[user.plan] || plans.free : plans.free;
+  const PlanIcon = plan.icon;
+  const remaining = user ? user.monthly_minutes - user.used_minutes : 0;
+  const usagePercent = user ? (user.used_minutes / user.monthly_minutes) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -25,105 +57,117 @@ export default function ProfilePage() {
               <a href="/dashboard/profile" className="px-3 py-1.5 text-blue-600 bg-blue-50 rounded-lg font-medium">用户中心</a>
             </nav>
           </div>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-gray-500">剩余 {totalMinutes - usedMinutes} 分钟</span>
-            <a href="/pricing" className="text-blue-600 hover:underline">升级</a>
-          </div>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        {/* User info card */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold">
-              U
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        <h1 className="text-xl font-semibold text-gray-900 mb-6">用户中心</h1>
+
+        {loading ? (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
+            <Loader2 className="w-6 h-6 text-gray-300 mx-auto mb-3 animate-spin" />
+            <p className="text-gray-500">加载中...</p>
+          </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <h2 className="text-sm font-medium text-gray-500 mb-4">基本信息</h2>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                    <User className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">账户邮箱</p>
+                    <p className="text-sm font-medium text-gray-900">{user?.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${plan.color.split(' ')[1]}`}>
+                    <PlanIcon className={`w-5 h-5 ${plan.color.split(' ')[0]}`} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">当前套餐</p>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${plan.color}`}>
+                      {plan.name}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-gray-900">user@example.com</h2>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
-                  <Crown className="w-3 h-3" />
-                  免费版
-                </span>
-                <span className="text-sm text-gray-500">注册于 2025-05-30</span>
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <h2 className="text-sm font-medium text-gray-500 mb-4">用量统计</h2>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-gray-500">本月时长</span>
+                    <span className="text-sm font-medium text-gray-900">{user?.used_minutes} / {user?.monthly_minutes} 分钟</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(usagePercent, 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">剩余 {remaining} 分钟</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs text-gray-500">处理任务</p>
+                    <p className="text-lg font-semibold text-gray-900">--</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-xs text-gray-500">转录时长</p>
+                    <p className="text-lg font-semibold text-gray-900">{user?.used_minutes || 0} 分钟</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="md:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <h2 className="text-sm font-medium text-gray-500 mb-4">套餐对比</h2>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className={`rounded-xl border-2 p-5 ${user?.plan === 'free' ? 'border-blue-200 bg-blue-50/50' : 'border-gray-100'}`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Package className="w-5 h-5 text-gray-600" />
+                    <span className="font-semibold text-gray-900">免费版</span>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 mb-1">¥0<span className="text-sm font-normal text-gray-500">/月</span></p>
+                  <ul className="space-y-2 text-sm text-gray-600 mt-4">
+                    <li className="flex items-center gap-2">每月60分钟转录时长</li>
+                    <li className="flex items-center gap-2">基础字幕提取</li>
+                    <li className="flex items-center gap-2">AI总结</li>
+                  </ul>
+                </div>
+                <div className={`rounded-xl border-2 p-5 ${user?.plan === 'pro' ? 'border-blue-200 bg-blue-50/50' : 'border-gray-100'}`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap className="w-5 h-5 text-blue-600" />
+                    <span className="font-semibold text-gray-900">专业版</span>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 mb-1">¥49<span className="text-sm font-normal text-gray-500">/月</span></p>
+                  <ul className="space-y-2 text-sm text-gray-600 mt-4">
+                    <li className="flex items-center gap-2">每月300分钟转录时长</li>
+                    <li className="flex items-center gap-2">GPU加速转录</li>
+                    <li className="flex items-center gap-2">高清导出</li>
+                  </ul>
+                </div>
+                <div className={`rounded-xl border-2 p-5 ${user?.plan === 'unlimited' ? 'border-blue-200 bg-blue-50/50' : 'border-gray-100'}`}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Crown className="w-5 h-5 text-amber-600" />
+                    <span className="font-semibold text-gray-900">无限版</span>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 mb-1">¥149<span className="text-sm font-normal text-gray-500">/月</span></p>
+                  <ul className="space-y-2 text-sm text-gray-600 mt-4">
+                    <li className="flex items-center gap-2">无限转录时长</li>
+                    <li className="flex items-center gap-2">优先队列</li>
+                    <li className="flex items-center gap-2">API访问</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Usage stats */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-          <h3 className="text-sm font-medium text-gray-900 mb-4 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-blue-600" />
-            本月用量
-          </h3>
-          <div className="flex items-center justify-between text-sm mb-2">
-            <span className="text-gray-500">已用 {usedMinutes} 分钟</span>
-            <span className="text-gray-900 font-medium">{totalMinutes} 分钟</span>
-          </div>
-          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-600 rounded-full transition-all"
-              style={{ width: `${usagePercent}%` }}
-            />
-          </div>
-          <p className="text-xs text-gray-400 mt-2">每月 1 日自动重置额度</p>
-        </div>
-
-        {/* Invite friends */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-          <h3 className="text-sm font-medium text-gray-900 mb-3 flex items-center gap-2">
-            <Gift className="w-4 h-4 text-orange-500" />
-            邀请好友
-          </h3>
-          <p className="text-sm text-gray-500 mb-4">
-            每邀请 1 位好友注册并完成首次转录，双方各得 <span className="text-blue-600 font-medium">+30 分钟</span> 免费额度
-          </p>
-          <div className="flex gap-3">
-            <input
-              type="text"
-              readOnly
-              value="https://flownote.cn?ref=USER001"
-              className="flex-1 px-4 py-2.5 bg-gray-50 rounded-xl text-sm text-gray-600 border border-gray-200"
-            />
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText('https://flownote.cn?ref=USER001');
-                alert('邀请链接已复制');
-              }}
-              className="px-4 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"
-            >
-              复制链接
-            </button>
-          </div>
-        </div>
-
-        {/* Quick actions */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <a href="/pricing" className="flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors border-b border-gray-50">
-            <Crown className="w-5 h-5 text-blue-600" />
-            <div className="flex-1">
-              <div className="text-sm font-medium text-gray-900">升级套餐</div>
-              <div className="text-xs text-gray-500">解锁更多转录时长和高级功能</div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-gray-400" />
-          </a>
-          <div className="flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors border-b border-gray-50 cursor-pointer">
-            <Mail className="w-5 h-5 text-gray-500" />
-            <div className="flex-1">
-              <div className="text-sm font-medium text-gray-900">修改密码</div>
-              <div className="text-xs text-gray-500">定期更换密码保障账号安全</div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-gray-400" />
-          </div>
-          <a href="/" className="flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors text-red-600">
-            <LogOut className="w-5 h-5" />
-            <div className="flex-1">
-              <div className="text-sm font-medium">退出登录</div>
-            </div>
-          </a>
-        </div>
+        )}
       </main>
     </div>
   );

@@ -88,6 +88,10 @@ def get_me(authorization: str = Header(None), db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="用户不存在")
 
+    from app.models import Task
+    total_duration = sum(t.duration or 0 for t in db.query(Task).filter(Task.user_id == user.id).all())
+    used_minutes = total_duration // 60
+
     return {
         "code": 0,
         "data": {
@@ -95,5 +99,7 @@ def get_me(authorization: str = Header(None), db: Session = Depends(get_db)):
             "email": user.email,
             "plan": user.plan,
             "monthly_minutes": user.monthly_minutes,
+            "used_minutes": used_minutes,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
         },
     }

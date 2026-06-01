@@ -36,7 +36,10 @@ export default function ResultPage() {
       setLoading(false);
       return;
     }
-    fetch(`/api/tasks/${taskId}`)
+    const token = localStorage.getItem('token');
+    fetch(`/api/tasks/${taskId}`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
       .then((r) => r.json())
       .then((json) => {
         if (json.code !== 0) {
