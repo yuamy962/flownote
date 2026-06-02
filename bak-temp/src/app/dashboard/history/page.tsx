@@ -1,26 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Video, Clock, CheckCircle, XCircle, Loader2, Trash2, ExternalLink, FileText } from 'lucide-react';
 
 interface Task {
   id: string;
   title: string;
-  source: string;
-  sourceType: 'bilibili' | 'upload';
+  source_type: string;
   duration: number;
   status: 'processing' | 'done' | 'failed';
-  createdAt: string;
+  created_at: string;
 }
-
-const mockTasks: Task[] = [
-  { id: '1', title: 'Python爬虫从入门到实战', source: 'BV1xx411c7mD', sourceType: 'bilibili', duration: 3600, status: 'done', createdAt: '2025-05-30 14:20' },
-  { id: '2', title: '改变一生的认知！易疲劳体质的形成与人体"充电"原理', source: 'BV1PrVN6oEvp', sourceType: 'bilibili', duration: 1860, status: 'done', createdAt: '2025-05-29 09:15' },
-  { id: '3', title: '考研数学复习全攻略｜高数线性代数概率论', source: 'BV2yy522d8nK', sourceType: 'bilibili', duration: 7200, status: 'processing', createdAt: '2025-05-30 16:00' },
-  { id: '4', title: 'C++ 高性能编程｜内存管理与并发', source: 'BV3zz633e9pM', sourceType: 'bilibili', duration: 3600, status: 'failed', createdAt: '2025-05-28 20:30' },
-  { id: '5', title: '2025 前端开发 roadmap｜React + Vue 学习路线', source: 'BV4aa744f2qR', sourceType: 'bilibili', duration: 1800, status: 'done', createdAt: '2025-05-27 11:00' },
-  { id: '6', title: '雅思口语 8 分技巧｜Part 2 万能模板', source: 'BV5bb855g3sT', sourceType: 'bilibili', duration: 2400, status: 'done', createdAt: '2025-05-26 19:45' },
-];
 
 const statusConfig = {
   processing: { label: '处理中', color: 'text-blue-600 bg-blue-50', icon: Loader2 },
@@ -30,7 +20,23 @@ const statusConfig = {
 
 export default function HistoryPage() {
   const [filter, setFilter] = useState<'all' | 'processing' | 'done' | 'failed'>('all');
-  const [tasks, setTasks] = useState(mockTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    fetch('/api/tasks', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.code === 0) {
+          setTasks(json.data.items || []);
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
 
   const filteredTasks = filter === 'all' ? tasks : tasks.filter((t) => t.status === filter);
 
@@ -41,9 +47,18 @@ export default function HistoryPage() {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('确定要删除这条记录吗？')) {
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-    }
+    if (!confirm('确定要删除这条记录吗？')) return;
+    const token = localStorage.getItem('token');
+    fetch(`/api/tasks/${id}`, {
+      method: 'DELETE',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.code === 0) {
+          setTasks((prev) => prev.filter((t) => t.id !== id));
+        }
+      });
   };
 
   return (
@@ -64,7 +79,6 @@ export default function HistoryPage() {
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-gray-500">剩余 60 分钟</span>
             <a href="/pricing" className="text-blue-600 hover:underline">升级</a>
           </div>
         </div>
@@ -76,7 +90,6 @@ export default function HistoryPage() {
           <span className="text-sm text-gray-500">共 {tasks.length} 条记录</span>
         </div>
 
-        {/* Filter tabs */}
         <div className="flex gap-2 mb-6">
           {(['all', 'processing', 'done', 'failed'] as const).map((key) => (
             <button
@@ -96,9 +109,13 @@ export default function HistoryPage() {
           ))}
         </div>
 
-        {/* Task list */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {filteredTasks.length === 0 ? (
+          {loading ? (
+            <div className="p-12 text-center">
+              <Loader2 className="w-6 h-6 text-gray-300 mx-auto mb-3 animate-spin" />
+              <p className="text-gray-500">加载中...</p>
+            </div>
+          ) : filteredTasks.length === 0 ? (
             <div className="p-12 text-center">
               <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500">暂无记录</p>
@@ -111,19 +128,19 @@ export default function HistoryPage() {
                 return (
                   <div key={task.id} className="flex items-center gap-4 p-4 hover:bg-gray-50/50 transition-colors">
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-blue-300">{task.title[0]}</span>
+                      <span className="text-sm font-bold text-blue-300">{task.title?.[0] || '▶'}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm font-medium text-gray-900 truncate">{task.title}</h3>
                       <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
-                        <span>{task.sourceType === 'bilibili' ? 'B站' : '上传'}</span>
+                        <span>{task.source_type === 'bilibili' ? 'B站' : '上传'}</span>
                         <span>·</span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {formatDuration(task.duration)}
                         </span>
                         <span>·</span>
-                        <span>{task.createdAt}</span>
+                        <span>{new Date(task.created_at).toLocaleString()}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -133,7 +150,7 @@ export default function HistoryPage() {
                       </span>
                       {task.status === 'done' && (
                         <a
-                          href="/dashboard/result"
+                          href={`/dashboard/result?id=${task.id}`}
                           className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                           title="查看结果"
                         >
