@@ -2,6 +2,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import engine, Base
+# 先初始化 Celery app，确保 @shared_task 能正确注册
+import celery_worker  # noqa: F401
 from app.routers import auth, tasks
 
 # 自动创建表
