@@ -3,6 +3,7 @@ import os
 import tempfile
 import asyncio
 import re
+import subprocess
 from celery import shared_task
 from app.database import SessionLocal
 from app.models import Task
@@ -24,6 +25,30 @@ def _get_db():
 def _extract_bvid(url: str) -> str | None:
     match = BV_PATTERN.search(url)
     return match.group(0) if match else None
+
+
+def _merge_segments(segment_files: list, output_file: str):
+    """合并视频分片：优先 ffmpeg，否则二进制追加"""
+    try:
+        list_file = output_file + ".txt"
+        with open(list_file, "w") as f:
+            for seg in segment_files:
+                f.write(f"file '{seg}'\n")
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file, "-c", "copy", output_file],
+            check=True,
+            capture_output=True,
+        )
+        print(f"[DEBUG] ffmpeg 合并成功: {output_file}")
+        return True
+    except Exception as e:
+        print(f"[DEBUG] ffmpeg 不可用，使用二进制追加合并: {e}")
+        with open(output_file, "wb") as out:
+            for seg in segment_files:
+                with open(seg, "rb") as f:
+                    out.write(f.read())
+        print(f"[DEBUG] 二进制合并完成: {output_file}")
+        return False
 
 
 def _download_bilibili_audio(url: str, output_path: str):
@@ -91,31 +116,35 @@ def _download_bilibili_audio(url: str, output_path: str):
 
         print(f"[DEBUG] B站返回 {len(durl_list)} 个视频分片")
         for i, d in enumerate(durl_list):
-            print(f"[DEBUG] 分片 {i+1}: size={d.get('size')}, length={d.get('length')}ms, url={d.get('url', '')[:80]}...")
+            print(f"[DEBUG] 分片 {i+1}: size={d.get('size')}, length={d.get('length')}ms")
 
-        # 3. 下载所有分片并合并
+        # 3. 下载所有分片
+        segment_files = []
+        for idx, seg in enumerate(durl_list):
+            seg_url = seg.get("url")
+            if not seg_url:
+                continue
+            seg_file = output_path + f"_seg{idx}.mp4"
+            resp = client.get(
+                seg_url,
+                headers=headers,
+                follow_redirects=True,
+                timeout=300.0,
+            )
+            resp.raise_for_status()
+            with open(seg_file, "wb") as f:
+                f.write(resp.content)
+            segment_files.append(seg_file)
+            print(f"[DEBUG] 分片 {idx+1}/{len(durl_list)} 下载完成: {len(resp.content)} bytes")
+
+        # 4. 合并分片
         merged_file = output_path + ".mp4"
-        total_size = 0
-        with open(merged_file, "wb") as out_f:
-            for idx, seg in enumerate(durl_list):
-                seg_url = seg.get("url")
-                if not seg_url:
-                    continue
-                resp = client.get(
-                    seg_url,
-                    headers=headers,
-                    follow_redirects=True,
-                    timeout=300.0,
-                )
-                resp.raise_for_status()
-                chunk_size = len(resp.content)
-                total_size += chunk_size
-                out_f.write(resp.content)
-                print(f"[DEBUG] 分片 {idx+1}/{len(durl_list)} 下载完成: {chunk_size} bytes")
+        _merge_segments(segment_files, merged_file)
 
-        print(f"[DEBUG] 合并完成: {merged_file}, 总大小: {total_size} bytes, 分片数: {len(durl_list)}")
+        total_size = os.path.getsize(merged_file)
+        print(f"[DEBUG] 合并文件总大小: {total_size} bytes")
         if total_size == 0:
-            raise Exception("下载的文件为空")
+            raise Exception("合并后的文件为空")
 
         return merged_file
 
@@ -177,6 +206,17 @@ def transcribe_video(self, task_id: str, source_url: str = None):
                     transcript = result.get("transcript", "")
                 if not transcript:
                     transcript = result.get("result", "")
+                # GPU 返回 segments 数组的情况
+                if not transcript and "segments" in result:
+                    lines = []
+                    for seg in result["segments"]:
+                        ts = seg.get("start", 0)
+                        mins = int(ts // 60)
+                        secs = int(ts % 60)
+                        text = seg.get("text", "").strip()
+                        if text:
+                            lines.append(f"[{mins:02d}:{secs:02d}] {text}")
+                    transcript = "\n".join(lines)
                 task.transcript = transcript
                 if not transcript:
                     task.error_message = f"Whisper 返回空转录，原始响应: {json.dumps(result, ensure_ascii=False)[:500]}"
