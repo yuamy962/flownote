@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Video, Upload, Link, Lock, Clock, Zap, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Video, Upload, Link, Lock, Clock, Zap, AlertCircle, FileText, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 function UserInfo() {
@@ -44,6 +44,9 @@ export default function Dashboard() {
   const [videoInfo, setVideoInfo] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleParse = async () => {
     if (!url.trim()) return;
@@ -113,7 +116,6 @@ export default function Dashboard() {
           >
             <Upload className="w-4 h-4" />
             本地上传
-            <Lock className="w-3 h-3 text-orange-500" />
           </button>
         </div>
 
@@ -223,18 +225,76 @@ export default function Dashboard() {
         )}
 
         {activeTab === 'upload' && (
-          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
-            <div className="w-16 h-16 bg-orange-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Lock className="w-8 h-8 text-orange-500" />
-            </div>
-            <h3 className="font-semibold text-gray-900 mb-2">本地上传仅限付费用户</h3>
-            <p className="text-sm text-gray-500 mb-6">
-              上传 MP4/MOV/MP3/WAV 文件，最大 2GB<br />
-              支持 GPU 快速转录，3-6 分钟出结果
-            </p>
-            <button className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
-              升级到基础版 ¥15/月
-            </button>
+          <div className="bg-white rounded-2xl border border-gray-100 p-8">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="video/*,audio/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) setUploadFile(file);
+              }}
+            />
+            {!uploadFile ? (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-gray-200 rounded-xl p-10 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-all"
+              >
+                <Upload className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                <p className="text-sm font-medium text-gray-700 mb-1">点击选择文件</p>
+                <p className="text-xs text-gray-400">支持 MP4 / MOV / MP3 / WAV，最大 500MB</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
+                  <FileText className="w-8 h-8 text-blue-500" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{uploadFile.name}</p>
+                    <p className="text-xs text-gray-500">{(uploadFile.size / 1024 / 1024).toFixed(1)} MB</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setUploadFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!uploadFile) return;
+                    setUploading(true);
+                    try {
+                      const token = localStorage.getItem('token');
+                      const formData = new FormData();
+                      formData.append('file', uploadFile);
+                      const res = await fetch('/api/tasks/upload', {
+                        method: 'POST',
+                        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                        body: formData,
+                      });
+                      const json = await res.json();
+                      if (json.code !== 0) {
+                        alert(json.detail || '上传失败');
+                        setUploading(false);
+                        return;
+                      }
+                      router.push(`/dashboard/processing?id=${json.data.id}`);
+                    } catch (err: any) {
+                      alert('上传错误: ' + err.message);
+                    }
+                    setUploading(false);
+                  }}
+                  disabled={uploading}
+                  className="w-full px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                >
+                  {uploading ? '上传中...' : '开始转录'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </main>

@@ -280,22 +280,21 @@ export default function ResultPage() {
   );
 }
 
+
 function renderMarkdown(md: string): string {
-  let html = md
-    .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold mb-4">$1</h1>')
-    .replace(/^## (.*$)/gim, '<h2 class="text-lg font-semibold mt-6 mb-3">$1</h2>')
-    .replace(/^### (.*$)/gim, '<h3 class="text-base font-medium mt-4 mb-2">$1</h3>')
-    .replace(/\`\`\`(\w+)?\n([\s\S]*?)\`\`\`/g, '<pre class="rounded-lg p-4 overflow-x-auto my-4"><code>$2</code></pre>')
-    .replace(/\`([^`]+)\`/g, '<code class="px-1 py-0.5 rounded text-sm">$1</code>')
-    .replace(/^(\|.+)\|$/gim, (match) => {
-      const cells = match.split('|').filter(Boolean).map((c) => c.trim());
-      return `<tr>${cells.map((c) => `<td class="border px-3 py-2 text-sm">${c}</td>`).join('')}</tr>`;
-    })
-    .replace(/^- (.*$)/gim, '<li class="ml-4 text-sm text-gray-700 mb-1">$1</li>')
-    .replace(/^(?!<[h|l|t|p|u])(.*$)/gim, '<p class="text-sm text-gray-700 mb-2 leading-relaxed">$1</p>');
-
-  html = html.replace(/(<tr>.*<\/tr>\n?)+/g, '<table class="w-full border-collapse my-4">$&</table>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul class="space-y-1 my-3">$&</ul>');
-
-  return html;
+  if (!md) return '';
+  return md
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/^# (.*)$/gim, '<h1 class="text-2xl font-bold text-gray-900 mb-4 mt-6">$1</h1>')
+    .replace(/^## (.*)$/gim, '<h2 class="text-lg font-semibold text-gray-900 mt-6 mb-3">$1</h2>')
+    .replace(/^### (.*)$/gim, '<h3 class="text-base font-medium text-gray-900 mt-4 mb-2">$1</h3>')
+    .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto my-4 text-sm"><code>$2</code></pre>')
+    .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-mono">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em class="italic text-gray-700">$1</em>')
+    .replace(/^- (.*)$/gim, '<li class="ml-4 text-sm text-gray-700 leading-relaxed">$1</li>')
+    .replace(/\n\n+/g, '\n<p class="mb-3"></p>\n')
+    .replace(/\n/g, '<br/>');
 }

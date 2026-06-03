@@ -185,6 +185,8 @@ def _find_downloaded_file(output_path: str) -> str:
 def transcribe_video(self, task_id: str, source_url: str = None, file_path: str = None):
     """Celery 任务：下载音频 / 读取本地文件 → GPU Whisper 转录 → DeepSeek 生成总结"""
     db = next(_get_db())
+    audio_file = None
+    tmpdir = None
     try:
         task = db.query(Task).filter(Task.id == task_id).first()
         if not task:
@@ -193,8 +195,6 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
         task.status = "processing"
         db.commit()
 
-        audio_file = None
-
         # 1. 获取音频文件（本地上传 or B站下载）
         if file_path and os.path.exists(file_path):
             # 本地上传的文件
@@ -202,52 +202,54 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
             print(f"[DEBUG] 使用本地文件: {audio_file}, 大小: {os.path.getsize(audio_file)} bytes")
         elif source_url:
             # B站下载
-            with tempfile.TemporaryDirectory() as tmpdir:
-                try:
-                    output_path = os.path.join(tmpdir, "video")
-                    audio_file = _download_bilibili_audio(source_url, output_path)
-                except Exception as e:
-                    task.status = "failed"
-                    task.error_message = f"音频下载失败: {str(e)}"
-                    db.commit()
-                    return {"task_id": task_id, "status": "failed", "error": str(e)}
+            tmpdir = tempfile.mkdtemp()
+            try:
+                output_path = os.path.join(tmpdir, "video")
+                audio_file = _download_bilibili_audio(source_url, output_path)
+                print(f"[DEBUG] B站下载完成: {audio_file}")
+            except Exception as e:
+                shutil.rmtree(tmpdir, ignore_errors=True)
+                task.status = "failed"
+                task.error_message = f"音频下载失败: {str(e)}"
+                db.commit()
+                return {"task_id": task_id, "status": "failed", "error": str(e)}
         else:
             task.status = "failed"
             task.error_message = "缺少视频地址或文件"
             db.commit()
             return {"task_id": task_id, "status": "failed", "error": "missing source"}
 
-            # 2. 调用 GPU Whisper 转录
-            try:
-                with open(audio_file, "rb") as f:
-                    file_data = f.read()
-                print(f"[DEBUG] 上传 GPU: {audio_file}, 大小: {len(file_data)} bytes")
-                result = asyncio.run(transcribe_audio(file_data, os.path.basename(audio_file)))
-                print(f"[DEBUG] GPU 返回: {result}")
-                transcript = result.get("text", "")
-                if not transcript:
-                    transcript = result.get("transcript", "")
-                if not transcript:
-                    transcript = result.get("result", "")
-                # GPU 返回 segments 数组的情况
-                if not transcript and "segments" in result:
-                    lines = []
-                    for seg in result["segments"]:
-                        ts = seg.get("start", 0)
-                        mins = int(ts // 60)
-                        secs = int(ts % 60)
-                        text = seg.get("text", "").strip()
-                        if text:
-                            lines.append(f"[{mins:02d}:{secs:02d}] {text}")
-                    transcript = "\n".join(lines)
-                task.transcript = transcript
-                if not transcript:
-                    task.error_message = f"Whisper 返回空转录，原始响应: {json.dumps(result, ensure_ascii=False)[:500]}"
-            except Exception as e:
-                task.status = "failed"
-                task.error_message = f"Whisper 转录失败: {str(e)}"
-                db.commit()
-                return {"task_id": task_id, "status": "failed", "error": str(e)}
+        # 2. 调用 GPU Whisper 转录
+        try:
+            with open(audio_file, "rb") as f:
+                file_data = f.read()
+            print(f"[DEBUG] 上传 GPU: {audio_file}, 大小: {len(file_data)} bytes")
+            result = asyncio.run(transcribe_audio(file_data, os.path.basename(audio_file)))
+            print(f"[DEBUG] GPU 返回: {result}")
+            transcript = result.get("text", "")
+            if not transcript:
+                transcript = result.get("transcript", "")
+            if not transcript:
+                transcript = result.get("result", "")
+            # GPU 返回 segments 数组的情况
+            if not transcript and "segments" in result:
+                lines = []
+                for seg in result["segments"]:
+                    ts = seg.get("start", 0)
+                    mins = int(ts // 60)
+                    secs = int(ts % 60)
+                    text = seg.get("text", "").strip()
+                    if text:
+                        lines.append(f"[{mins:02d}:{secs:02d}] {text}")
+                transcript = "\n".join(lines)
+            task.transcript = transcript
+            if not transcript:
+                task.error_message = f"Whisper 返回空转录，原始响应: {json.dumps(result, ensure_ascii=False)[:500]}"
+        except Exception as e:
+            task.status = "failed"
+            task.error_message = f"Whisper 转录失败: {str(e)}"
+            db.commit()
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
 
         # 3. 调用 DeepSeek 生成总结
         if task.transcript:
@@ -262,6 +264,17 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
         from datetime import datetime
         task.completed_at = datetime.utcnow()
         db.commit()
+
+        # 4. 清理临时文件
+        if audio_file and os.path.exists(audio_file):
+            try:
+                os.remove(audio_file)
+                print(f"[DEBUG] 已删除临时文件: {audio_file}")
+            except Exception:
+                pass
+        if tmpdir:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
         return {"task_id": task_id, "status": "done"}
 
     except Exception as e:

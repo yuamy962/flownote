@@ -18,6 +18,9 @@ class User(Base):
     plan = Column(String(20), default="free")  # free, basic, pro, unlimited
     monthly_minutes = Column(Integer, default=60)
     plan_expires_at = Column(DateTime, nullable=True)
+    pan_baidu_token = Column(String(512), nullable=True)
+    pan_baidu_refresh = Column(String(512), nullable=True)
+    pan_baidu_expires = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

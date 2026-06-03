@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1/chat/completions"
+    BAIDU_PAN_APP_KEY: str = ""
+    BAIDU_PAN_SECRET_KEY: str = ""
+    BAIDU_PAN_APP_ID: str = ""
+    BAIDU_PAN_REDIRECT_URI: str = ""
 
     class Config:
         env_file = ".env"
