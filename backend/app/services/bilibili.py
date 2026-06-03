@@ -3,11 +3,17 @@ import httpx
 
 
 BV_PATTERN = re.compile(r"BV[a-zA-Z0-9]{10}")
+PAGE_PATTERN = re.compile(r"[?&]p=(\d+)")
 
 
 def extract_bvid(url: str) -> str | None:
     match = BV_PATTERN.search(url)
     return match.group(0) if match else None
+
+
+def extract_page(url: str) -> int:
+    match = PAGE_PATTERN.search(url)
+    return int(match.group(1)) if match else 1
 
 
 async def fetch_video_info(bvid: str) -> dict:
@@ -77,16 +83,38 @@ def format_subtitle(body: list[dict]) -> str:
 
 async def parse_bilibili_url(url: str) -> dict:
     """
-    解析 B 站链接，返回视频信息 + 字幕文本（如果有）
+    解析 B 站链接，支持选集/多 P 视频
+    返回视频信息 + 字幕文本（如果有）
     """
     bvid = extract_bvid(url)
     if not bvid:
         raise ValueError("无法从链接中提取 BV 号")
 
+    page_num = extract_page(url)
     info = await fetch_video_info(bvid)
-    cid = info["cid"]
+
+    # 处理选集：根据 p 参数找到对应分 P 的 cid
+    pages = info.get("pages", [])
+    target_page = None
+    for p in pages:
+        if p.get("page") == page_num:
+            target_page = p
+            break
+
+    if target_page:
+        cid = target_page["cid"]
+        part_title = target_page.get("part", "")
+        duration = target_page.get("duration", 0)
+    else:
+        #  fallback：取第一个
+        cid = info["cid"]
+        part_title = ""
+        duration = info.get("duration", 0)
+
     title = info.get("title", "")
-    duration = info.get("duration", 0)
+    if part_title:
+        title = f"{title} - {part_title}"
+
     pic = info.get("pic", "")
     uploader = info.get("owner", {}).get("name", "")
 
@@ -94,7 +122,6 @@ async def parse_bilibili_url(url: str) -> dict:
     subtitles = await fetch_subtitle_list(bvid, cid)
     subtitle_text = ""
     if subtitles:
-        # 默认取第一个字幕（通常是中文）
         sub_url = subtitles[0].get("subtitle_url", "")
         if sub_url:
             body = await fetch_subtitle_content(sub_url)
