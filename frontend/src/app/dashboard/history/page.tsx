@@ -12,7 +12,8 @@ interface Task {
   created_at: string;
 }
 
-const statusConfig = {
+const statusConfig: Record<string, { label: string; color: string; icon: typeof Loader2 }> = {
+  pending: { label: '等待中', color: 'text-amber-600 bg-amber-50', icon: Loader2 },
   processing: { label: '处理中', color: 'text-blue-600 bg-blue-50', icon: Loader2 },
   done: { label: '已完成', color: 'text-green-600 bg-green-50', icon: CheckCircle },
   failed: { label: '失败', color: 'text-red-600 bg-red-50', icon: XCircle },
