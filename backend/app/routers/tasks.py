@@ -1,5 +1,8 @@
 import json
-from fastapi import APIRouter, Depends, HTTPException, Header
+import os
+import shutil
+import tempfile
+from fastapi import APIRouter, Depends, HTTPException, Header, File, UploadFile
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Task, User
@@ -137,6 +140,47 @@ def list_tasks(
                 }
                 for t in tasks
             ],
+        },
+    }
+
+
+@router.post("/upload")
+async def upload_task(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """上传本地视频文件，创建转录任务"""
+    # 保存上传的文件到临时目录
+    suffix = os.path.splitext(file.filename or "video.mp4")[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+
+    # 创建任务
+    task = Task(
+        user_id=user.id,
+        source_type="upload",
+        source_url="",
+        title=file.filename or "上传视频",
+        duration=0,  # 暂时不知道时长，转录后更新
+        status="pending",
+        processing_path="gpu",
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    # 触发 Celery 任务（传本地文件路径）
+    transcribe_video.delay(task.id, "", tmp_path)
+
+    return {
+        "code": 0,
+        "data": {
+            "id": task.id,
+            "title": task.title,
+            "status": task.status,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
         },
     }
 

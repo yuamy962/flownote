@@ -182,8 +182,8 @@ def _find_downloaded_file(output_path: str) -> str:
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
-def transcribe_video(self, task_id: str, source_url: str = None):
-    """Celery 任务：下载音频 → GPU Whisper 转录 → DeepSeek 生成总结"""
+def transcribe_video(self, task_id: str, source_url: str = None, file_path: str = None):
+    """Celery 任务：下载音频 / 读取本地文件 → GPU Whisper 转录 → DeepSeek 生成总结"""
     db = next(_get_db())
     try:
         task = db.query(Task).filter(Task.id == task_id).first()
@@ -193,22 +193,29 @@ def transcribe_video(self, task_id: str, source_url: str = None):
         task.status = "processing"
         db.commit()
 
-        if not source_url:
-            task.status = "failed"
-            task.error_message = "缺少视频地址"
-            db.commit()
-            return {"task_id": task_id, "status": "failed", "error": "missing url"}
+        audio_file = None
 
-        # 1. 下载音频
-        with tempfile.TemporaryDirectory() as tmpdir:
-            try:
-                output_path = os.path.join(tmpdir, "video")
-                audio_file = _download_bilibili_audio(source_url, output_path)
-            except Exception as e:
-                task.status = "failed"
-                task.error_message = f"音频下载失败: {str(e)}"
-                db.commit()
-                return {"task_id": task_id, "status": "failed", "error": str(e)}
+        # 1. 获取音频文件（本地上传 or B站下载）
+        if file_path and os.path.exists(file_path):
+            # 本地上传的文件
+            audio_file = file_path
+            print(f"[DEBUG] 使用本地文件: {audio_file}, 大小: {os.path.getsize(audio_file)} bytes")
+        elif source_url:
+            # B站下载
+            with tempfile.TemporaryDirectory() as tmpdir:
+                try:
+                    output_path = os.path.join(tmpdir, "video")
+                    audio_file = _download_bilibili_audio(source_url, output_path)
+                except Exception as e:
+                    task.status = "failed"
+                    task.error_message = f"音频下载失败: {str(e)}"
+                    db.commit()
+                    return {"task_id": task_id, "status": "failed", "error": str(e)}
+        else:
+            task.status = "failed"
+            task.error_message = "缺少视频地址或文件"
+            db.commit()
+            return {"task_id": task_id, "status": "failed", "error": "missing source"}
 
             # 2. 调用 GPU Whisper 转录
             try:
