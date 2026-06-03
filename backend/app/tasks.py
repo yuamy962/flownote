@@ -12,6 +12,7 @@ from app.services.whisper import transcribe_audio
 import httpx
 
 BV_PATTERN = re.compile(r"BV[a-zA-Z0-9]{10}")
+PAGE_PATTERN = re.compile(r"[?&]p=(\d+)")
 
 
 def _get_db():
@@ -25,6 +26,11 @@ def _get_db():
 def _extract_bvid(url: str) -> str | None:
     match = BV_PATTERN.search(url)
     return match.group(0) if match else None
+
+
+def _extract_page(url: str) -> int:
+    match = PAGE_PATTERN.search(url)
+    return int(match.group(1)) if match else 1
 
 
 def _merge_segments(segment_files: list, output_file: str):
@@ -77,13 +83,14 @@ def _download_bilibili_audio(url: str, output_path: str):
     if not bvid:
         raise ValueError("无法从链接中提取 BV 号")
 
+    page_num = _extract_page(url)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": "https://www.bilibili.com",
     }
 
     with httpx.Client(timeout=30.0, headers=headers) as client:
-        # 1. 获取视频信息 -> cid
+        # 1. 获取视频信息，根据 p 参数找对应分 P 的 cid
         resp = client.get(
             "https://api.bilibili.com/x/web-interface/view",
             params={"bvid": bvid},
@@ -92,7 +99,16 @@ def _download_bilibili_audio(url: str, output_path: str):
         data = resp.json()
         if data.get("code") != 0:
             raise Exception(f"获取视频信息失败: {data.get('message')}")
-        cid = data["data"]["cid"]
+
+        # 选集处理：根据 p 参数找对应 cid
+        pages = data.get("data", {}).get("pages", [])
+        cid = None
+        for p in pages:
+            if p.get("page") == page_num:
+                cid = p["cid"]
+                break
+        if not cid:
+            cid = data["data"]["cid"]
 
         # 2. 获取普通格式视频流（fnval=0 返回完整 FLV/MP4 分片列表）
         resp = client.get(
