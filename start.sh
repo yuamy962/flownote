@@ -53,6 +53,7 @@ echo -e "${YELLOW}[1/5] 停止已有服务...${NC}"
 pkill -f "uvicorn app.main:app --host 0.0.0.0 --port 8001" 2>/dev/null || true
 pkill -f "celery -A celery_worker worker" 2>/dev/null || true
 pkill -f "npm run dev" 2>/dev/null || true
+pkill -f "next-server" 2>/dev/null || true
 sleep 2
 echo -e "${GREEN}✓ 旧服务已清理${NC}"
 
@@ -127,7 +128,7 @@ echo -e "${GREEN}  所有服务已启动！${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "访问地址:"
-echo -e "  ${GREEN}前端:${NC} http://$(curl -s ifconfig.me 2>/dev/null || echo '你的服务器IP'):3000"
+echo -e "  ${GREEN}前端:${NC} https://flownote.cn"
 echo -e "  ${GREEN}后端:${NC} http://localhost:8001"
 echo -e "  ${GREEN}健康检查:${NC} http://localhost:8001/api/health"
 echo ""

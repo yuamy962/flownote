@@ -13,6 +13,7 @@ pkill -f "celery -A celery_worker worker" 2>/dev/null && echo "  ✓ Celery 已�
 
 echo "[3/3] 停止 Next.js 前端..."
 pkill -f "npm run dev" 2>/dev/null && echo "  ✓ 前端已停止" || echo "  - 前端未运行"
+pkill -f "next-server" 2>/dev/null && echo "  ✓ next-server 已停止" || echo "  - next-server 未运行"
 
 echo ""
 echo "========================================"
