@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     BAIDU_PAN_APP_ID: str = ""
     BAIDU_PAN_REDIRECT_URI: str = ""
 
+    # 微信支付配置
+    WECHAT_PAY_MCHID: str = ""
+    WECHAT_PAY_APIV3_KEY: str = ""
+    WECHAT_PAY_NOTIFY_URL: str = "https://flownote.cn/api/pay/notify"
+    WECHAT_PAY_CERT_SERIAL: str = ""
+    WECHAT_PAY_PRIVATE_KEY_PATH: str = "./certs/apiclient_key.pem"
+
     class Config:
         env_file = ".env"
 

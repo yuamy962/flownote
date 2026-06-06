@@ -5,7 +5,7 @@ from sqlalchemy import inspect, text
 from app.database import engine, Base
 # 先初始化 Celery app，确保 @shared_task 能正确注册
 import celery_worker  # noqa: F401
-from app.routers import auth, tasks
+from app.routers import auth, tasks, pay
 # from app.routers import pan  # 网盘功能暂不启用
 
 # 自动创建表
@@ -44,6 +44,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
+app.include_router(pay.router, prefix="/api")
 # app.include_router(pan.router, prefix="/api")  # 网盘功能暂不启用
 
 

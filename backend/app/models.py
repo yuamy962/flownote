@@ -1,7 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, Text, Enum, DECIMAL
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Integer, DateTime, Text, UniqueConstraint
 from app.database import Base
 
 
@@ -41,3 +40,42 @@ class Task(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+
+
+class Plan(Base):
+    __tablename__ = "plans"
+
+    id = Column(String(20), primary_key=True)  # basic, pro, unlimited
+    name = Column(String(50), nullable=False)
+    price_cent = Column(Integer, nullable=False)
+    duration_minutes = Column(Integer, default=0)
+    description = Column(Text)
+    sort_order = Column(Integer, default=0)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    user_id = Column(String(36), nullable=False)
+    plan_id = Column(String(20), nullable=True)
+    out_trade_no = Column(String(32), unique=True, nullable=False)
+    amount_cent = Column(Integer, nullable=False)
+    status = Column(String(20), default="pending")  # pending, paid, closed
+    pay_channel = Column(String(20), default="wx_native")
+    channel_trade_no = Column(String(64), nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PaymentLog(Base):
+    __tablename__ = "payment_logs"
+
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    order_id = Column(String(36), nullable=False)
+    channel = Column(String(20))
+    channel_trade_no = Column(String(64))
+    amount_cent = Column(Integer)
+    status = Column(String(20))
+    notify_data = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
