@@ -97,6 +97,7 @@ class WeChatPayV3:
         """Native 支付：统一下单，返回 code_url"""
         body = {
             "mchid": self.mchid,
+            "appid": settings.WECHAT_PAY_APPID,
             "out_trade_no": out_trade_no,
             "description": description,
             "notify_url": self.notify_url,

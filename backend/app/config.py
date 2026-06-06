@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     WECHAT_PAY_NOTIFY_URL: str = "https://flownote.cn/api/pay/notify"
     WECHAT_PAY_CERT_SERIAL: str = ""
     WECHAT_PAY_PRIVATE_KEY_PATH: str = "./certs/apiclient_key.pem"
+    WECHAT_PAY_APPID: str = ""
 
     class Config:
         env_file = ".env"
