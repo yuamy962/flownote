@@ -27,6 +27,30 @@ def get_current_user(authorization: str = Header(None), db: Session = Depends(ge
     return user
 
 
+@router.get("/parse-bilibili")
+async def parse_bilibili(
+    url: str,
+    user: User = Depends(get_current_user),
+):
+    """预览解析 B 站视频信息（不创建任务）"""
+    if not url:
+        raise HTTPException(status_code=400, detail="缺少 url 参数")
+    try:
+        result = await parse_bilibili_url(url)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"解析失败: {str(e)}")
+    return {
+        "code": 0,
+        "data": {
+            "title": result["title"],
+            "duration": result["duration"],
+            "cover": result["pic"],
+            "uploader": result["uploader"],
+            "hasSubtitle": result["has_subtitle"],
+        },
+    }
+
+
 @router.post("")
 async def create_task(
     payload: dict,
