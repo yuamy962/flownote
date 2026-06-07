@@ -1,9 +1,38 @@
 import re
 import httpx
+import random
 
 
 BV_PATTERN = re.compile(r"BV[a-zA-Z0-9]{10}")
 PAGE_PATTERN = re.compile(r"[?&]p=(\d+)")
+
+
+def _gen_buvid() -> str:
+    """生成一个随机的 buvid3（B站反爬虫需要）"""
+    return f"{random.randint(1000000000, 9999999999)}-{random.randint(1000000000, 9999999999)}-{''.join(random.choices('0123456789ABCDEF', k=36))}"
+
+
+def _headers() -> dict:
+    return {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://www.bilibili.com",
+        "Origin": "https://www.bilibili.com",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+    }
+
+
+def _cookies() -> dict:
+    return {
+        "buvid3": _gen_buvid(),
+        "b_nut": str(random.randint(1000000000, 9999999999)),
+    }
 
 
 def extract_bvid(url: str) -> str | None:
@@ -22,15 +51,13 @@ async def fetch_video_info(bvid: str) -> dict:
         resp = await client.get(
             "https://api.bilibili.com/x/web-interface/view",
             params={"bvid": bvid},
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Referer": "https://www.bilibili.com",
-            },
+            headers=_headers(),
+            cookies=_cookies(),
         )
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != 0:
-            raise Exception(data.get("message", "B站 API 错误"))
+            raise Exception(f"B站 API 错误: [{data.get('code')}] {data.get('message', '未知错误')}")
         return data["data"]
 
 
@@ -40,10 +67,8 @@ async def fetch_subtitle_list(bvid: str, cid: int) -> list:
         resp = await client.get(
             "https://api.bilibili.com/x/player/v2",
             params={"cid": cid, "bvid": bvid},
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Referer": "https://www.bilibili.com",
-            },
+            headers=_headers(),
+            cookies=_cookies(),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -63,7 +88,7 @@ async def fetch_subtitle_content(subtitle_url: str) -> list[dict]:
         subtitle_url = "https:" + subtitle_url
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(subtitle_url)
+        resp = await client.get(subtitle_url, headers=_headers())
         resp.raise_for_status()
         data = resp.json()
         return data.get("body", [])
@@ -106,7 +131,7 @@ async def parse_bilibili_url(url: str) -> dict:
         part_title = target_page.get("part", "")
         duration = target_page.get("duration", 0)
     else:
-        #  fallback：取第一个
+        # fallback：取第一个
         cid = info["cid"]
         part_title = ""
         duration = info.get("duration", 0)

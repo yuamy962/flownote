@@ -12,8 +12,11 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True, default=gen_uuid)
-    email = Column(String(255), unique=True, nullable=False)
-    password_hash = Column(String(255), nullable=False)
+    email = Column(String(255), unique=True, nullable=True)           # 微信登录用户无邮箱
+    password_hash = Column(String(255), nullable=True)               # 微信登录用户无密码
+    openid = Column(String(128), unique=True, nullable=True)         # 微信 openid
+    nickname = Column(String(128), nullable=True)
+    avatar = Column(String(512), nullable=True)
     plan = Column(String(20), default="free")  # free, basic, pro, unlimited
     monthly_minutes = Column(Integer, default=60)
     plan_expires_at = Column(DateTime, nullable=True)

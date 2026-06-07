@@ -85,7 +85,10 @@ class WeChatPayV3:
                 ciphertext = base64.b64decode(enc["ciphertext"])
                 aesgcm = AESGCM(self.apiv3_key.encode())
                 plaintext = aesgcm.decrypt(nonce, ciphertext, aad)
-                public_key = serialization.load_pem_public_key(plaintext)
+                # 微信支付平台证书是 X.509 格式，不是直接的公钥
+                from cryptography import x509
+                cert = x509.load_pem_x509_certificate(plaintext)
+                public_key = cert.public_key()
                 self.platform_certificates[serial] = public_key
                 print(f"[WeChatPay] Loaded platform cert: {serial}")
         except Exception as e:

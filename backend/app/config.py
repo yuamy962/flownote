@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     WECHAT_PAY_PRIVATE_KEY_PATH: str = "./certs/apiclient_key.pem"
     WECHAT_PAY_APPID: str = ""
 
+    # 微信登录配置（开放平台网站应用）
+    WECHAT_APP_ID: str = ""
+    WECHAT_APP_SECRET: str = ""
+
     class Config:
         env_file = ".env"
 
