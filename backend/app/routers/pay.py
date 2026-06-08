@@ -134,9 +134,11 @@ def get_order_status(
 async def wechat_notify(request: Request, db: Session = Depends(get_db)):
     body_bytes = await request.body()
     body_str = body_bytes.decode("utf-8")
-    headers = dict(request.headers)
+    # 保留原始 Headers 对象（大小写不敏感），不要转 dict
+    headers = request.headers
 
     print(f"[PayNotify] Received callback, body={body_str[:500]}")
+    print(f"[PayNotify] Headers: {dict(headers)}")
 
     # 1. 验签
     wxpay = get_wechat_pay()

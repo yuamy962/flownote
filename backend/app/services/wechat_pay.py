@@ -19,6 +19,7 @@ class WeChatPayV3:
         self.notify_url = settings.WECHAT_PAY_NOTIFY_URL
         self.cert_serial = settings.WECHAT_PAY_CERT_SERIAL
         self.private_key_path = settings.WECHAT_PAY_PRIVATE_KEY_PATH
+        self.public_key_path = settings.WECHAT_PAY_PUBLIC_KEY_PATH
 
         if not all([self.mchid, self.apiv3_key, self.cert_serial]):
             raise ValueError("微信支付配置不完整，请检查 WECHAT_PAY_MCHID / APIV3_KEY / CERT_SERIAL")
@@ -29,9 +30,17 @@ class WeChatPayV3:
         with open(self.private_key_path, "r") as f:
             self.private_key = serialization.load_pem_private_key(f.read().encode(), password=None)
 
-        # 平台证书缓存 {serial: public_key}
+        # 加载微信支付公钥（新方式，替代平台证书）
+        self.public_key = None
+        if self.public_key_path and os.path.exists(self.public_key_path):
+            with open(self.public_key_path, "r") as f:
+                self.public_key = serialization.load_pem_public_key(f.read().encode())
+            print(f"[WeChatPay] Loaded WeChat public key: {self.public_key_path}")
+
+        # 平台证书缓存 {serial: public_key}（旧方式，作为兜底）
         self.platform_certificates = {}
-        self._load_platform_certs()
+        if not self.public_key:
+            self._load_platform_certs()
 
     def _sign(self, method: str, url_path: str, timestamp: str, nonce_str: str, body: str = "") -> str:
         message = f"{method}\n{url_path}\n{timestamp}\n{nonce_str}\n{body}\n"
@@ -72,7 +81,7 @@ class WeChatPayV3:
             return resp.json() if resp.text else {}
 
     def _load_platform_certs(self):
-        """下载并解密微信支付平台证书（用于回调验签）"""
+        """下载并解密微信支付平台证书（用于回调验签，旧方式）"""
         try:
             certs_data = self._request("GET", "/v3/certificates")
             for cert in certs_data.get("data", []):
@@ -85,7 +94,6 @@ class WeChatPayV3:
                 ciphertext = base64.b64decode(enc["ciphertext"])
                 aesgcm = AESGCM(self.apiv3_key.encode())
                 plaintext = aesgcm.decrypt(nonce, ciphertext, aad)
-                # 微信支付平台证书是 X.509 格式，不是直接的公钥
                 from cryptography import x509
                 cert = x509.load_pem_x509_certificate(plaintext)
                 public_key = cert.public_key()
@@ -111,17 +119,32 @@ class WeChatPayV3:
         }
         return self._request("POST", "/v3/pay/transactions/native", body)
 
-    def verify_notify(self, headers: dict, body_str: str) -> bool:
-        """验签微信回调请求"""
-        serial = headers.get("Wechatpay-Serial")
-        nonce = headers.get("Wechatpay-Nonce")
-        timestamp = headers.get("Wechatpay-Timestamp")
-        signature = headers.get("Wechatpay-Signature")
+    def verify_notify(self, headers, body_str: str) -> bool:
+        """验签微信回调请求（支持微信支付公钥 + 平台证书兜底）"""
+        # Caddy 等反向代理可能将请求头规范化为小写，做兼容处理
+        serial = headers.get("Wechatpay-Serial") or headers.get("wechatpay-serial")
+        nonce = headers.get("Wechatpay-Nonce") or headers.get("wechatpay-nonce")
+        timestamp = headers.get("Wechatpay-Timestamp") or headers.get("wechatpay-timestamp")
+        signature = headers.get("Wechatpay-Signature") or headers.get("wechatpay-signature")
 
         if not all([serial, nonce, timestamp, signature]):
             print("[WeChatPay] Missing notify headers")
             return False
 
+        message = f"{timestamp}\n{nonce}\n{body_str}\n"
+        sig_bytes = base64.b64decode(signature)
+
+        # 优先使用微信支付公钥（新方式）
+        if self.public_key:
+            try:
+                self.public_key.verify(sig_bytes, message.encode(), padding.PKCS1v15(), hashes.SHA256())
+                print("[WeChatPay] Verify success with public key")
+                return True
+            except Exception as e:
+                print(f"[WeChatPay] Public key verify failed: {e}")
+                return False
+
+        # 回退到平台证书（旧方式）
         public_key = self.platform_certificates.get(serial)
         if not public_key:
             self._load_platform_certs()
@@ -130,10 +153,9 @@ class WeChatPayV3:
                 print(f"[WeChatPay] Platform cert not found: {serial}")
                 return False
 
-        message = f"{timestamp}\n{nonce}\n{body_str}\n"
         try:
-            sig_bytes = base64.b64decode(signature)
             public_key.verify(sig_bytes, message.encode(), padding.PKCS1v15(), hashes.SHA256())
+            print("[WeChatPay] Verify success with platform cert")
             return True
         except Exception as e:
             print(f"[WeChatPay] Verify failed: {e}")

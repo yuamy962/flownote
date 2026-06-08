@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     WECHAT_PAY_CERT_SERIAL: str = ""
     WECHAT_PAY_PRIVATE_KEY_PATH: str = "./certs/apiclient_key.pem"
     WECHAT_PAY_APPID: str = ""
+    # 微信支付公钥路径（新商户号使用微信支付公钥替代平台证书）
+    WECHAT_PAY_PUBLIC_KEY_PATH: str = ""
 
     # 微信登录配置（开放平台网站应用）
     WECHAT_APP_ID: str = ""

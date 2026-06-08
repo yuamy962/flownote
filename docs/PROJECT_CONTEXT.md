@@ -64,33 +64,28 @@
 
 ## 四、当前进度（重点）
 
-### 🔴 阻塞中：微信支付待新服务号认证 + 商户号切换
+### 🟢 已完成：微信支付
 
-**状态**：支付代码已写完，正在从旧商户号/旧服务号切换到新商户号/新服务号
+**状态**：支付全流程已跑通
 
-**背景**：
-- 旧商户号 1612137979 绑定的旧服务号「外卖便宜社」（wx86fc88243360817f）
-- 旧服务号 2022年因骚扰信息被永久限制消息能力，且名称与 FlowNote 品牌不符
-- **新商户号 1113595290 已就绪**（APIv3密钥、证书已设置）
-- **新服务号「FlowNote」待注册认证**
+**实现**：
+- 新商户号 1113595290 + 旧服务号（已认证改名「涵讯科技」）组合
+- 使用微信支付公钥替代平台证书进行回调验签
+- Native 支付二维码 → 扫码支付 → 回调验签 → 解密 → 更新订单 → 增加用户时长，全链路正常
 
-**待完成事项**：
-1. ✅ 新商户号 1113595290 已申请通过，APIv3 密钥/证书已配置
-2. ⏳ 注册并认证新服务号「FlowNote」（mp.weixin.qq.com，300元，1-3工作日）
-3. ⏳ 新服务号认证通过后，在商户平台绑定新 AppID
-4. ⏳ 配置 Native 支付回调链接：`https://flownote.cn/api/pay/notify`
-5. ⏳ 下载新商户号私钥 `apiclient_key.pem` 放到 `backend/certs/`
-6. ⏳ 补充 `.env` 中的 `WECHAT_PAY_APPID` / `APIV3_KEY` / `CERT_SERIAL`
-7. ⏳ 部署到服务器，测试支付全流程
+**注意**：
+- 旧商户号 1612137979 因历史原因被限制收款，已废弃
+- 服务号「涵讯科技」有 2022 年消息能力永久限制，但**不影响支付功能**
 
-**当前 `.env` 配置（新商户号，待补充 AppID 和密钥）**：
+**当前 `.env` 配置**：
 ```env
 WECHAT_PAY_MCHID=1113595290
-WECHAT_PAY_APIV3_KEY=          # 待填入
+WECHAT_PAY_APIV3_KEY=a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5PA
 WECHAT_PAY_NOTIFY_URL=https://flownote.cn/api/pay/notify
-WECHAT_PAY_CERT_SERIAL=        # 待填入
+WECHAT_PAY_CERT_SERIAL=391290B39F2A14A1B431120968507F30152A8FA4
 WECHAT_PAY_PRIVATE_KEY_PATH=./certs/apiclient_key.pem
-WECHAT_PAY_APPID=              # 新服务号认证通过后填入
+WECHAT_PAY_PUBLIC_KEY_PATH=./certs/pub_key.pem
+WECHAT_PAY_APPID=wx86fc88243360817f
 ```
 
 ### 🟡 待测试：本地上传全流程
@@ -178,14 +173,12 @@ nohup celery -A celery_worker worker --loglevel=info > logs/celery.log 2>&1 &
 |---|---|
 | DeepSeek API Key | `sk-16adcccfeb154c72b26a26f34d963e0e` |
 | GPU Whisper URL | `http://119.45.200.37:8000` |
-| 旧商户号 | `1612137979`（已废弃，绑定旧服务号）|
-| 新商户号 | `1113595290`（已就绪，待绑定新服务号）|
+| 商户号 | `1612137979`（绑定服务号，认证后可用）|
 | 商户简称 | 涵讯科技 |
 | 回调 URL | `https://flownote.cn/api/pay/notify` |
-| 旧 APIv3 密钥 | `a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5PA`（已废弃）|
-| 新 APIv3 密钥 | 已设置（见商户平台）|
-| 旧服务号 AppID | `wx86fc88243360817f`（外卖便宜社，已废弃）|
-| 新服务号 AppID | 待注册认证后获取 |
+| APIv3 密钥 | `a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5PA` |
+| 服务号 AppID | `wx86fc88243360817f`（待认证改名「涵讯科技」）|
+| 备用商户号 | `1113595290`（已申请通过，暂不启用）|
 
 ---
 
