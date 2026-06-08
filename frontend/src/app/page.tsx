@@ -110,8 +110,8 @@ export default function Home() {
         {/* Pricing Preview */}
         <section id="pricing" className="max-w-5xl mx-auto px-4 py-16">
           <h2 className="text-2xl font-bold text-center text-gray-900 mb-12">简单定价</h2>
-          <div className="grid md:grid-cols-3 gap-6 max-w-3xl mx-auto">
-            <div className="p-6 rounded-2xl border border-gray-100 bg-white text-center">
+          <div className="grid md:grid-cols-4 gap-4 max-w-5xl mx-auto">
+            <div className="p-5 rounded-2xl border border-gray-100 bg-white text-center">
               <h3 className="font-semibold text-gray-900 mb-1">免费版</h3>
               <div className="text-3xl font-bold text-gray-900 mb-1">¥0</div>
               <p className="text-sm text-gray-500 mb-4">每月 60 分钟</p>
@@ -119,19 +119,27 @@ export default function Home() {
                 免费开始
               </a>
             </div>
-            <div className="p-6 rounded-2xl border border-blue-200 bg-blue-50/50 shadow-lg shadow-blue-100 text-center">
+            <div className="p-5 rounded-2xl border border-blue-200 bg-blue-50/50 shadow-lg shadow-blue-100 text-center">
               <h3 className="font-semibold text-gray-900 mb-1">基础版</h3>
-              <div className="text-3xl font-bold text-gray-900 mb-1">¥15</div>
-              <p className="text-sm text-gray-500 mb-4">每月 5 小时</p>
-              <a href="/register" className="block w-full py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium text-center">
+              <div className="text-3xl font-bold text-gray-900 mb-1">¥19</div>
+              <p className="text-sm text-gray-500 mb-4">300 分钟</p>
+              <a href="/pricing" className="block w-full py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium text-center">
                 立即订阅
               </a>
             </div>
-            <div className="p-6 rounded-2xl border border-gray-100 bg-white text-center">
+            <div className="p-5 rounded-2xl border border-gray-100 bg-white text-center">
               <h3 className="font-semibold text-gray-900 mb-1">专业版</h3>
-              <div className="text-3xl font-bold text-gray-900 mb-1">¥29</div>
-              <p className="text-sm text-gray-500 mb-4">每月 20 小时</p>
-              <a href="/register" className="block w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium text-center">
+              <div className="text-3xl font-bold text-gray-900 mb-1">¥49</div>
+              <p className="text-sm text-gray-500 mb-4">1000 分钟</p>
+              <a href="/pricing" className="block w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium text-center">
+                立即订阅
+              </a>
+            </div>
+            <div className="p-5 rounded-2xl border border-gray-100 bg-white text-center">
+              <h3 className="font-semibold text-gray-900 mb-1">无限版</h3>
+              <div className="text-3xl font-bold text-gray-900 mb-1">¥99</div>
+              <p className="text-sm text-gray-500 mb-4">不限时长</p>
+              <a href="/pricing" className="block w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium text-center">
                 立即订阅
               </a>
             </div>
@@ -141,9 +149,15 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-gray-100 py-8 mt-16">
-        <div className="max-w-5xl mx-auto px-4 flex items-center justify-between text-sm text-gray-500">
+        <div className="max-w-5xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between text-sm text-gray-500 gap-3">
           <div>© 2025 FlowNote. All rights reserved.</div>
-          <div className="flex gap-4">
+          <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4">
+            <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">
+              青ICP备2026000930号-1
+            </a>
+            <a href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=63010502000671" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">
+              青公网安备63010502000671号
+            </a>
             <a href="#" className="hover:text-gray-700">隐私政策</a>
             <a href="#" className="hover:text-gray-700">用户协议</a>
           </div>

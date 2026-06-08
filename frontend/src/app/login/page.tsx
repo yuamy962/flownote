@@ -193,6 +193,14 @@ export default function LoginPage() {
             <p className="text-center text-xs text-gray-400 mt-8">
               <a href="/" className="hover:text-gray-600">← 返回首页</a>
             </p>
+            <p className="text-center text-xs text-gray-400 mt-4 flex items-center justify-center gap-3">
+              <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600">
+                青ICP备2026000930号-1
+              </a>
+              <a href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=63010502000671" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600">
+                青公网安备63010502000671号
+              </a>
+            </p>
           </div>
         </div>
       </div>

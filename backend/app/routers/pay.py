@@ -189,13 +189,17 @@ async def wechat_notify(request: Request, db: Session = Depends(get_db)):
         from datetime import datetime
         order.paid_at = datetime.utcnow()
 
-        # 给用户加时长
+        # 给用户更新套餐并加时长
         plan = db.query(Plan).filter(Plan.id == order.plan_id).first()
         if plan:
             user = db.query(User).filter(User.id == order.user_id).first()
             if user:
-                user.monthly_minutes += plan.duration_minutes
-                print(f"[PayNotify] User {user.id} added {plan.duration_minutes} minutes, total={user.monthly_minutes}")
+                user.plan = plan.id
+                if plan.id == "unlimited":
+                    user.monthly_minutes = 999999  # 无限版给一个足够大的数
+                else:
+                    user.monthly_minutes += plan.duration_minutes
+                print(f"[PayNotify] User {user.id} upgraded to {plan.id}, minutes={user.monthly_minutes}")
 
     db.commit()
 
