@@ -5,86 +5,125 @@ from sqlalchemy import inspect, text
 from app.database import engine, Base
 # 先初始化 Celery app，确保 @shared_task 能正确注册
 import celery_worker  # noqa: F401
-from app.routers import auth, tasks, pay
+from app.routers import auth, tasks, pay, credits, invite
 # from app.routers import pan  # 网盘功能暂不启用
 
 # 自动创建表
 Base.metadata.create_all(bind=engine)
 
+
+def _add_column_if_not_exists(conn, table, col_name, col_def):
+    """辅助：如果列不存在则添加"""
+    inspector = inspect(engine)
+    cols = {c["name"] for c in inspector.get_columns(table)}
+    if col_name not in cols:
+        try:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"))
+            print(f"[MIGRATE] Added column: {table}.{col_name}")
+        except Exception as e:
+            print(f"[MIGRATE] Failed to add {table}.{col_name}: {e}")
+
+
+def _create_index_if_not_exists(conn, table, idx_name, cols, unique=False):
+    """辅助：如果索引不存在则创建"""
+    inspector = inspect(engine)
+    indexes = {idx["name"] for idx in inspector.get_indexes(table)}
+    if idx_name not in indexes:
+        u = "UNIQUE" if unique else ""
+        conn.execute(text(f"CREATE {u} INDEX IF NOT EXISTS {idx_name} ON {table} ({cols})"))
+        print(f"[MIGRATE] Created index: {idx_name}")
+
+
 # 自动迁移：检查并添加缺失的列（避免重建数据库丢失数据）
 def auto_migrate():
     try:
-        inspector = inspect(engine)
-        columns = {c["name"]: c for c in inspector.get_columns("users")}
         with engine.connect() as conn:
-            # 1. 添加新列（如果不存在）
-            if "openid" not in columns:
-                conn.execute(text("ALTER TABLE users ADD COLUMN openid VARCHAR(128)"))
-                print("[MIGRATE] Added column: users.openid")
-            if "nickname" not in columns:
-                conn.execute(text("ALTER TABLE users ADD COLUMN nickname VARCHAR(128)"))
-                print("[MIGRATE] Added column: users.nickname")
-            if "avatar" not in columns:
-                conn.execute(text("ALTER TABLE users ADD COLUMN avatar VARCHAR(512)"))
-                print("[MIGRATE] Added column: users.avatar")
+            # ========== users 表 ==========
+            _add_column_if_not_exists(conn, "users", "permanent_minutes", "INTEGER DEFAULT 60")
+            _add_column_if_not_exists(conn, "users", "auto_renew", "BOOLEAN DEFAULT 0")
+            _add_column_if_not_exists(conn, "users", "invite_code", "VARCHAR(16)")
+            _add_column_if_not_exists(conn, "users", "invited_by", "VARCHAR(36)")
 
-            # 2. 旧的百度网盘列迁移（保留兼容）
-            if "pan_baidu_token" not in columns:
-                conn.execute(text("ALTER TABLE users ADD COLUMN pan_baidu_token VARCHAR(512)"))
-                print("[MIGRATE] Added column: users.pan_baidu_token")
-            if "pan_baidu_refresh" not in columns:
-                conn.execute(text("ALTER TABLE users ADD COLUMN pan_baidu_refresh VARCHAR(512)"))
-                print("[MIGRATE] Added column: users.pan_baidu_refresh")
-            if "pan_baidu_expires" not in columns:
-                conn.execute(text("ALTER TABLE users ADD COLUMN pan_baidu_expires DATETIME"))
-                print("[MIGRATE] Added column: users.pan_baidu_expires")
+            _create_index_if_not_exists(conn, "users", "ix_users_invite_code", "invite_code", unique=True)
+            _create_index_if_not_exists(conn, "users", "ix_users_invited_by", "invited_by")
 
-            # 3. 重建表以修改 email/password_hash 的 nullable 约束
-            # SQLite 不支持 ALTER COLUMN，需要重建表
-            email_col = columns.get("email")
-            if email_col and not email_col.get("nullable", True):
-                print("[MIGRATE] Rebuilding users table to make email/password_hash nullable...")
+            _add_column_if_not_exists(conn, "users", "openid", "VARCHAR(128)")
+            _add_column_if_not_exists(conn, "users", "nickname", "VARCHAR(128)")
+            _add_column_if_not_exists(conn, "users", "avatar", "VARCHAR(512)")
+            _add_column_if_not_exists(conn, "users", "pan_baidu_token", "VARCHAR(512)")
+            _add_column_if_not_exists(conn, "users", "pan_baidu_refresh", "VARCHAR(512)")
+            _add_column_if_not_exists(conn, "users", "pan_baidu_expires", "DATETIME")
+
+            _create_index_if_not_exists(conn, "users", "ix_users_openid", "openid", unique=True)
+
+            # ========== tasks 表 ==========
+            _add_column_if_not_exists(conn, "tasks", "consumed_minutes", "INTEGER")
+            _add_column_if_not_exists(conn, "tasks", "cost_type", "VARCHAR(20) DEFAULT 'free'")
+
+            # ========== orders 表 ==========
+            _add_column_if_not_exists(conn, "orders", "is_subscription", "BOOLEAN DEFAULT 0")
+            _add_column_if_not_exists(conn, "orders", "subscription_months", "INTEGER DEFAULT 1")
+
+            # ========== plans 表 ==========
+            _add_column_if_not_exists(conn, "plans", "validity_days", "INTEGER DEFAULT 30")
+
+            # 同步已有 plan 的 validity_days
+            conn.execute(text("UPDATE plans SET validity_days = 30 WHERE validity_days IS NULL OR validity_days = 0"))
+
+            # 更新现有套餐为新的"便宜一半"定价
+            # basic: 1500分/600分钟/30天
+            conn.execute(text("""
+                UPDATE plans SET
+                    name = '轻量月卡',
+                    price_cent = 1500,
+                    duration_minutes = 600,
+                    validity_days = 30,
+                    description = '600分钟转录时长，适合轻度用户和新手体验',
+                    sort_order = 1
+                WHERE id = 'basic'
+            """))
+
+            # pro: 3500分/6000分钟/30天
+            conn.execute(text("""
+                UPDATE plans SET
+                    name = '专业月卡',
+                    price_cent = 3500,
+                    duration_minutes = 6000,
+                    validity_days = 30,
+                    description = '6000分钟转录时长，适合内容创作者和学生党',
+                    sort_order = 2
+                WHERE id = 'pro'
+            """))
+
+            # 将 unlimited 下架（不再售卖，但不删除以免影响历史订单）
+            conn.execute(text("""
+                UPDATE plans SET
+                    name = '已下架',
+                    sort_order = 99
+                WHERE id = 'unlimited'
+            """))
+
+            # 插入年付套餐（如果不存在）
+            existing_plan_ids = {row[0] for row in conn.execute(text("SELECT id FROM plans")).fetchall()}
+            if "basic_year" not in existing_plan_ids:
                 conn.execute(text("""
-                    CREATE TABLE users_new (
-                        id VARCHAR(36) PRIMARY KEY,
-                        email VARCHAR(255) UNIQUE,
-                        password_hash VARCHAR(255),
-                        openid VARCHAR(128) UNIQUE,
-                        nickname VARCHAR(128),
-                        avatar VARCHAR(512),
-                        plan VARCHAR(20) DEFAULT 'free',
-                        monthly_minutes INTEGER DEFAULT 60,
-                        plan_expires_at DATETIME,
-                        pan_baidu_token VARCHAR(512),
-                        pan_baidu_refresh VARCHAR(512),
-                        pan_baidu_expires DATETIME,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                    )
+                    INSERT INTO plans (id, name, price_cent, duration_minutes, validity_days, description, sort_order)
+                    VALUES ('basic_year', '轻量年卡', 6900, 7200, 365, '7200分钟转录时长（600分钟/月×12），年付更划算', 3)
                 """))
+                print("[MIGRATE] Added plan: basic_year")
+            if "pro_year" not in existing_plan_ids:
                 conn.execute(text("""
-                    INSERT INTO users_new (
-                        id, email, password_hash, openid, nickname, avatar,
-                        plan, monthly_minutes, plan_expires_at,
-                        pan_baidu_token, pan_baidu_refresh, pan_baidu_expires, created_at
-                    ) SELECT
-                        id, email, password_hash, openid, nickname, avatar,
-                        plan, monthly_minutes, plan_expires_at,
-                        pan_baidu_token, pan_baidu_refresh, pan_baidu_expires, created_at
-                    FROM users
+                    INSERT INTO plans (id, name, price_cent, duration_minutes, validity_days, description, sort_order)
+                    VALUES ('pro_year', '专业年卡', 23900, 72000, 365, '72000分钟转录时长（6000分钟/月×12），重度用户首选', 4)
                 """))
-                conn.execute(text("DROP TABLE users"))
-                conn.execute(text("ALTER TABLE users_new RENAME TO users"))
-                print("[MIGRATE] Rebuilt users table successfully")
+                print("[MIGRATE] Added plan: pro_year")
 
-            # 4. 创建 openid 唯一索引（如果还没有）
-            indexes = {idx["name"] for idx in inspector.get_indexes("users")}
-            if "ix_users_openid" not in indexes:
-                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_openid ON users (openid)"))
-                print("[MIGRATE] Created unique index: ix_users_openid")
-
+            # 新表已自动创建
             conn.commit()
+        print("[MIGRATE] Auto migration completed")
     except Exception as e:
         print(f"[MIGRATE] Error: {e}")
+
 
 auto_migrate()
 
@@ -101,6 +140,8 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(pay.router, prefix="/api")
+app.include_router(credits.router, prefix="/api")
+app.include_router(invite.router, prefix="/api")
 # app.include_router(pan.router, prefix="/api")  # 网盘功能暂不启用
 
 

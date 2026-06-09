@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -9,6 +10,8 @@ from app.models import Task, User
 from app.services.bilibili import parse_bilibili_url
 from app.services.deepseek import generate_notes
 from app.services.auth import decode_token
+from app.services.credits import deduct_minutes, get_user_balance
+from app.services.invite import reward_first_task
 from app.tasks import transcribe_video
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -32,7 +35,7 @@ async def parse_bilibili(
     url: str,
     user: User = Depends(get_current_user),
 ):
-    """预览解析 B 站视频信息（不创建任务）"""
+    """预览解析 B 站视频信息（不创建任务，不扣费）"""
     if not url:
         raise HTTPException(status_code=400, detail="缺少 url 参数")
     try:
@@ -66,15 +69,31 @@ async def create_task(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"解析失败: {str(e)}")
 
+    duration = result.get("duration", 0)
+    estimated_minutes = math.ceil(duration / 60) if duration else 1
+
+    # 扣费检查（字幕直出也需要扣费）
+    deduct_result = deduct_minutes(
+        db, user, estimated_minutes,
+        description=f"转录《{result['title'][:30]}》"
+    )
+    if not deduct_result["success"]:
+        raise HTTPException(
+            status_code=402,
+            detail=f"时长不足，需要 {estimated_minutes} 分钟，当前余额 {get_user_balance(user)['total']} 分钟"
+        )
+
     task = Task(
         user_id=user.id,
         source_type="bilibili",
         source_url=url,
         title=result["title"],
-        duration=result["duration"],
+        duration=duration,
         status="done" if result["has_subtitle"] else "pending",
         processing_path="subtitle" if result["has_subtitle"] else "gpu",
         transcript=result["subtitle_text"] if result["has_subtitle"] else None,
+        consumed_minutes=estimated_minutes,
+        cost_type=deduct_result["cost_type"],
     )
 
     if result["has_subtitle"] and result["subtitle_text"]:
@@ -88,6 +107,15 @@ async def create_task(
     db.add(task)
     db.commit()
     db.refresh(task)
+
+    # 字幕直出且成功 → 触发首次转录邀请奖励
+    if result["has_subtitle"] and task.status == "done":
+        try:
+            reward_first_task(db, user)
+            db.commit()
+        except Exception as e:
+            print(f"[InviteReward] Error: {e}")
+            db.rollback()
 
     # 无字幕视频触发 GPU 转录任务
     if not result["has_subtitle"]:
@@ -103,6 +131,7 @@ async def create_task(
             "has_subtitle": result["has_subtitle"],
             "pic": result["pic"],
             "uploader": result["uploader"],
+            "consumed_minutes": task.consumed_minutes,
             "created_at": task.created_at.isoformat() if task.created_at else None,
         },
     }
@@ -124,6 +153,8 @@ def get_task(task_id: str, user: User = Depends(get_current_user), db: Session =
             "summary": json.loads(task.summary) if task.summary else None,
             "notes": task.notes,
             "error_message": task.error_message,
+            "consumed_minutes": task.consumed_minutes,
+            "cost_type": task.cost_type,
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         },
@@ -160,6 +191,8 @@ def list_tasks(
                     "duration": t.duration,
                     "status": t.status,
                     "source_type": t.source_type,
+                    "consumed_minutes": t.consumed_minutes,
+                    "cost_type": t.cost_type,
                     "created_at": t.created_at.isoformat() if t.created_at else None,
                 }
                 for t in tasks
@@ -175,27 +208,39 @@ async def upload_task(
     db: Session = Depends(get_db),
 ):
     """上传本地视频文件，创建转录任务"""
-    # 保存上传的文件到临时目录
+    # 本地上传暂时无法预知时长，先扣 1 分钟保底，转录完成后按实际时长补扣或返还
+    estimated_minutes = 1
+
+    deduct_result = deduct_minutes(
+        db, user, estimated_minutes,
+        description=f"上传视频《{file.filename[:30]}》"
+    )
+    if not deduct_result["success"]:
+        raise HTTPException(
+            status_code=402,
+            detail=f"时长不足，当前余额 {get_user_balance(user)['total']} 分钟"
+        )
+
     suffix = os.path.splitext(file.filename or "video.mp4")[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
 
-    # 创建任务
     task = Task(
         user_id=user.id,
         source_type="upload",
         source_url="",
         title=file.filename or "上传视频",
-        duration=0,  # 暂时不知道时长，转录后更新
+        duration=0,
         status="pending",
         processing_path="gpu",
+        consumed_minutes=estimated_minutes,
+        cost_type=deduct_result["cost_type"],
     )
     db.add(task)
     db.commit()
     db.refresh(task)
 
-    # 触发 Celery 任务（传本地文件路径）
     transcribe_video.delay(task.id, "", tmp_path)
 
     return {
@@ -204,6 +249,7 @@ async def upload_task(
             "id": task.id,
             "title": task.title,
             "status": task.status,
+            "consumed_minutes": task.consumed_minutes,
             "created_at": task.created_at.isoformat() if task.created_at else None,
         },
     }

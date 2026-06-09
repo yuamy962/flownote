@@ -3,12 +3,16 @@ import os
 import tempfile
 import asyncio
 import re
+import shutil
 import subprocess
+import math
 from celery import shared_task
 from app.database import SessionLocal
-from app.models import Task
+from app.models import Task, User
 from app.services.deepseek import generate_notes
 from app.services.whisper import transcribe_audio
+from app.services.credits import deduct_minutes, refund_task_minutes
+from app.services.invite import reward_first_task
 import httpx
 
 BV_PATTERN = re.compile(r"BV[a-zA-Z0-9]{10}")
@@ -55,6 +59,23 @@ def _merge_segments(segment_files: list, output_file: str):
                     out.write(f.read())
         print(f"[DEBUG] 二进制合并完成: {output_file}")
         return False
+
+
+def _get_audio_duration(file_path: str) -> float:
+    """使用 ffprobe 获取音频/视频时长（秒）"""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", file_path
+            ],
+            capture_output=True, text=True, timeout=30
+        )
+        duration = float(result.stdout.strip())
+        return duration
+    except Exception as e:
+        print(f"[DEBUG] ffprobe 获取时长失败: {e}")
+        return 0.0
 
 
 def _download_bilibili_audio(url: str, output_path: str):
@@ -197,11 +218,9 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
 
         # 1. 获取音频文件（本地上传 or B站下载）
         if file_path and os.path.exists(file_path):
-            # 本地上传的文件
             audio_file = file_path
             print(f"[DEBUG] 使用本地文件: {audio_file}, 大小: {os.path.getsize(audio_file)} bytes")
         elif source_url:
-            # B站下载
             tmpdir = tempfile.mkdtemp()
             try:
                 output_path = os.path.join(tmpdir, "video")
@@ -218,6 +237,12 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
             task.error_message = "缺少视频地址或文件"
             db.commit()
             return {"task_id": task_id, "status": "failed", "error": "missing source"}
+
+        # 获取实际音频时长
+        actual_duration = _get_audio_duration(audio_file)
+        if actual_duration > 0:
+            task.duration = int(actual_duration)
+            db.commit()
 
         # 2. 调用 GPU Whisper 转录
         try:
@@ -265,7 +290,49 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
         task.completed_at = datetime.utcnow()
         db.commit()
 
-        # 4. 清理临时文件
+        # 4. 上传任务：补扣或返还时长差额
+        if task.source_type == "upload" and task.duration > 0:
+            actual_minutes = math.ceil(task.duration / 60)
+            estimated = task.consumed_minutes or 1
+            user = db.query(User).filter(User.id == task.user_id).first()
+            if user and actual_minutes != estimated:
+                diff = actual_minutes - estimated
+                if diff > 0:
+                    # 需要补扣
+                    from app.services.credits import deduct_minutes
+                    deduct_result = deduct_minutes(
+                        db, user, diff,
+                        task_id=task.id,
+                        description=f"上传视频实际时长补扣（预估{estimated}分钟，实际{actual_minutes}分钟）"
+                    )
+                    if deduct_result["success"]:
+                        task.consumed_minutes = actual_minutes
+                        db.commit()
+                elif diff < 0:
+                    # 需要返还
+                    refund = -diff
+                    # 优先返还 permanent（简单处理）
+                    user.permanent_minutes = (user.permanent_minutes or 0) + refund
+                    from app.services.credits import _create_transaction
+                    _create_transaction(
+                        db, user.id, "task_refund", refund, "permanent",
+                        user.permanent_minutes, task.id,
+                        f"上传视频时长返还（预估{estimated}分钟，实际{actual_minutes}分钟）"
+                    )
+                    task.consumed_minutes = actual_minutes
+                    db.commit()
+
+        # 5. 触发首次转录邀请奖励
+        try:
+            user = db.query(User).filter(User.id == task.user_id).first()
+            if user:
+                reward_first_task(db, user)
+                db.commit()
+        except Exception as e:
+            print(f"[InviteReward] Error in transcribe_video: {e}")
+            db.rollback()
+
+        # 6. 清理临时文件
         if audio_file and os.path.exists(audio_file):
             try:
                 os.remove(audio_file)

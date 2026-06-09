@@ -19,12 +19,21 @@ def init_plans():
             return
 
         plans = [
-            Plan(id="basic", name="基础版", price_cent=1900, duration_minutes=300,
-                 description="300分钟转录时长，适合轻度用户", sort_order=1),
-            Plan(id="pro", name="专业版", price_cent=4900, duration_minutes=1000,
-                 description="1000分钟转录时长，适合内容创作者", sort_order=2),
-            Plan(id="unlimited", name="无限版", price_cent=9900, duration_minutes=999999,
-                 description="不限转录时长，专业团队首选", sort_order=3),
+            # 月付套餐
+            Plan(id="basic", name="轻量月卡", price_cent=1500, duration_minutes=600,
+                 validity_days=30,
+                 description="600分钟转录时长，适合轻度用户和新手体验", sort_order=1),
+            Plan(id="pro", name="专业月卡", price_cent=3500, duration_minutes=6000,
+                 validity_days=30,
+                 description="6000分钟转录时长，适合内容创作者和学生党", sort_order=2),
+
+            # 年付套餐（均价更低）
+            Plan(id="basic_year", name="轻量年卡", price_cent=6900, duration_minutes=7200,
+                 validity_days=365,
+                 description="7200分钟转录时长（600分钟/月×12），年付更划算", sort_order=3),
+            Plan(id="pro_year", name="专业年卡", price_cent=23900, duration_minutes=72000,
+                 validity_days=365,
+                 description="72000分钟转录时长（6000分钟/月×12），重度用户首选", sort_order=4),
         ]
         for p in plans:
             db.add(p)

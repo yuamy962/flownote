@@ -5,13 +5,15 @@ from jose import jwt, JWTError
 from app.config import settings
 
 
-def create_state_token() -> str:
+def create_state_token(invite_code: str = "") -> str:
     """生成用于微信 OAuth state 参数的 JWT（防 CSRF）"""
-    return jwt.encode(
-        {"nonce": secrets.token_urlsafe(16), "exp": datetime.utcnow() + timedelta(minutes=5)},
-        settings.SECRET_KEY,
-        algorithm="HS256",
-    )
+    payload = {
+        "nonce": secrets.token_urlsafe(16),
+        "exp": datetime.utcnow() + timedelta(minutes=5),
+    }
+    if invite_code:
+        payload["invite_code"] = invite_code
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
 
 def verify_state_token(state: str) -> bool:
@@ -22,9 +24,9 @@ def verify_state_token(state: str) -> bool:
         return False
 
 
-def get_wechat_auth_url(redirect_uri: str) -> tuple[str, str]:
+def get_wechat_auth_url(redirect_uri: str, invite_code: str = "") -> tuple[str, str]:
     """返回 (微信授权URL, state)"""
-    state = create_state_token()
+    state = create_state_token(invite_code=invite_code)
     url = (
         f"https://open.weixin.qq.com/connect/qrconnect"
         f"?appid={settings.WECHAT_APP_ID}"

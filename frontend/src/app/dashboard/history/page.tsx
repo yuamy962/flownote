@@ -8,8 +8,10 @@ interface Task {
   title: string;
   source_type: string;
   duration: number;
-  status: 'processing' | 'done' | 'failed';
+  status: 'pending' | 'processing' | 'done' | 'failed';
   created_at: string;
+  consumed_minutes: number;
+  cost_type: string;
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Loader2 }> = {
@@ -45,6 +47,12 @@ export default function HistoryPage() {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     return h > 0 ? `${h}小时${m}分钟` : `${m}分钟`;
+  };
+
+  const formatCost = (task: Task) => {
+    if (task.cost_type === 'unlimited') return '无限套餐';
+    if (!task.consumed_minutes) return '免费';
+    return `消耗 ${task.consumed_minutes} 分钟`;
   };
 
   const handleDelete = (id: string) => {
@@ -133,12 +141,16 @@ export default function HistoryPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm font-medium text-gray-900 truncate">{task.title}</h3>
-                      <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+                      <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5 flex-wrap">
                         <span>{task.source_type === 'bilibili' ? 'B站' : '上传'}</span>
                         <span>·</span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {formatDuration(task.duration)}
+                        </span>
+                        <span>·</span>
+                        <span className={`text-xs ${task.cost_type === 'unlimited' ? 'text-amber-600' : 'text-gray-400'}`}>
+                          {formatCost(task)}
                         </span>
                         <span>·</span>
                         <span>{new Date(task.created_at).toLocaleString()}</span>

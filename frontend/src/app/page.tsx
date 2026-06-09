@@ -1,11 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Video, FileText, Zap, ArrowRight } from 'lucide-react';
 
 export default function Home() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const invite = params.get('invite');
+    if (invite) {
+      localStorage.setItem('invite_code', invite);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +37,7 @@ export default function Home() {
             <a href="#features" className="hover:text-blue-600">功能</a>
             <a href="/pricing" className="hover:text-blue-600">定价</a>
             <a href="/login" className="hover:text-blue-600">登录</a>
-            <a href="/register" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+            <a href="/login" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
               免费开始
             </a>
           </nav>
@@ -74,7 +82,7 @@ export default function Home() {
               </button>
             </form>
             <p className="text-xs text-gray-400 mt-3">
-              免费版每月 60 分钟，支持 B 站字幕直接解析
+              注册即送 60 分钟永久免费额度，支持 B 站字幕直接解析
             </p>
           </div>
         </section>
@@ -109,36 +117,39 @@ export default function Home() {
 
         {/* Pricing Preview */}
         <section id="pricing" className="max-w-5xl mx-auto px-4 py-16">
-          <h2 className="text-2xl font-bold text-center text-gray-900 mb-12">简单定价</h2>
+          <div className="text-center mb-12">
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">简单定价</h2>
+            <p className="text-gray-500">比主流竞品便宜一半，没有积分换算，直接按分钟计费</p>
+          </div>
           <div className="grid md:grid-cols-4 gap-4 max-w-5xl mx-auto">
             <div className="p-5 rounded-2xl border border-gray-100 bg-white text-center">
               <h3 className="font-semibold text-gray-900 mb-1">免费版</h3>
               <div className="text-3xl font-bold text-gray-900 mb-1">¥0</div>
-              <p className="text-sm text-gray-500 mb-4">每月 60 分钟</p>
-              <a href="/register" className="block w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium text-center">
+              <p className="text-sm text-gray-500 mb-4">60 分钟永久额度</p>
+              <a href="/login" className="block w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium text-center">
                 免费开始
               </a>
             </div>
             <div className="p-5 rounded-2xl border border-blue-200 bg-blue-50/50 shadow-lg shadow-blue-100 text-center">
-              <h3 className="font-semibold text-gray-900 mb-1">基础版</h3>
-              <div className="text-3xl font-bold text-gray-900 mb-1">¥19</div>
-              <p className="text-sm text-gray-500 mb-4">300 分钟</p>
+              <h3 className="font-semibold text-gray-900 mb-1">轻量月卡</h3>
+              <div className="text-3xl font-bold text-gray-900 mb-1">¥15</div>
+              <p className="text-sm text-gray-500 mb-4">600 分钟 / 30天</p>
               <a href="/pricing" className="block w-full py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium text-center">
                 立即订阅
               </a>
             </div>
             <div className="p-5 rounded-2xl border border-gray-100 bg-white text-center">
-              <h3 className="font-semibold text-gray-900 mb-1">专业版</h3>
-              <div className="text-3xl font-bold text-gray-900 mb-1">¥49</div>
-              <p className="text-sm text-gray-500 mb-4">1000 分钟</p>
+              <h3 className="font-semibold text-gray-900 mb-1">专业月卡</h3>
+              <div className="text-3xl font-bold text-gray-900 mb-1">¥35</div>
+              <p className="text-sm text-gray-500 mb-4">6000 分钟 / 30天</p>
               <a href="/pricing" className="block w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium text-center">
                 立即订阅
               </a>
             </div>
             <div className="p-5 rounded-2xl border border-gray-100 bg-white text-center">
-              <h3 className="font-semibold text-gray-900 mb-1">无限版</h3>
-              <div className="text-3xl font-bold text-gray-900 mb-1">¥99</div>
-              <p className="text-sm text-gray-500 mb-4">不限时长</p>
+              <h3 className="font-semibold text-gray-900 mb-1">专业年卡</h3>
+              <div className="text-3xl font-bold text-gray-900 mb-1">¥239</div>
+              <p className="text-sm text-gray-500 mb-4">72000 分钟 / 年</p>
               <a href="/pricing" className="block w-full py-2.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium text-center">
                 立即订阅
               </a>
@@ -158,8 +169,8 @@ export default function Home() {
             <a href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=63010502000671" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">
               青公网安备63010502000671号
             </a>
-            <a href="#" className="hover:text-gray-700">隐私政策</a>
-            <a href="#" className="hover:text-gray-700">用户协议</a>
+            <a href="/privacy" className="hover:text-gray-700">隐私政策</a>
+            <a href="/terms" className="hover:text-gray-700">用户协议</a>
           </div>
         </div>
       </footer>

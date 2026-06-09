@@ -4,13 +4,15 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User
-from app.services.auth import hash_password, verify_password, create_access_token, decode_token
+from app.services.auth import create_access_token, decode_token
 from app.services.wechat_auth import (
     get_wechat_auth_url,
     get_access_token,
     get_user_info,
     verify_state_token,
 )
+from app.services.credits import get_user_balance
+from app.services.invite import bind_inviter, get_or_create_invite_code
 from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -18,31 +20,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 WECHAT_REDIRECT_URI = "https://flownote.cn/api/auth/wechat/callback"
 
 
-@router.post("/register")
-def register(payload: dict, db: Session = Depends(get_db)):
-    email = payload.get("email", "").strip().lower()
-    password = payload.get("password", "")
-
-    if not email or not password:
-        raise HTTPException(status_code=400, detail="邮箱和密码不能为空")
-    if len(password) < 8:
-        raise HTTPException(status_code=400, detail="密码至少 8 位")
-
-    existing = db.query(User).filter(User.email == email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="该邮箱已注册")
-
-    user = User(
-        email=email,
-        password_hash=hash_password(password),
-        plan="free",
-        monthly_minutes=60,
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    token = create_access_token({"sub": user.id})
+def _user_response(user: User, token: str) -> dict:
+    """统一用户响应格式"""
+    balance = get_user_balance(user)
     return {
         "code": 0,
         "data": {
@@ -53,36 +33,12 @@ def register(payload: dict, db: Session = Depends(get_db)):
                 "nickname": user.nickname or "",
                 "avatar": user.avatar or "",
                 "plan": user.plan,
-                "monthly_minutes": user.monthly_minutes,
-            },
-        },
-    }
-
-
-@router.post("/login")
-def login(payload: dict, db: Session = Depends(get_db)):
-    email = payload.get("email", "").strip().lower()
-    password = payload.get("password", "")
-
-    if not email or not password:
-        raise HTTPException(status_code=400, detail="邮箱和密码不能为空")
-
-    user = db.query(User).filter(User.email == email).first()
-    if not user or not user.password_hash or not verify_password(password, user.password_hash):
-        raise HTTPException(status_code=401, detail="邮箱或密码错误")
-
-    token = create_access_token({"sub": user.id})
-    return {
-        "code": 0,
-        "data": {
-            "token": token,
-            "user": {
-                "id": user.id,
-                "email": user.email or "",
-                "nickname": user.nickname or "",
-                "avatar": user.avatar or "",
-                "plan": user.plan,
-                "monthly_minutes": user.monthly_minutes,
+                "monthly_minutes": balance["monthly"],
+                "permanent_minutes": balance["permanent"],
+                "total_minutes": balance["total"],
+                "plan_expires_at": balance["plan_expires_at"],
+                "auto_renew": balance["auto_renew"],
+                "invite_code": user.invite_code,
             },
         },
     }
@@ -107,6 +63,8 @@ def get_me(authorization: str = Header(None), db: Session = Depends(get_db)):
     total_duration = sum(t.duration or 0 for t in db.query(Task).filter(Task.user_id == user.id).all())
     used_minutes = total_duration // 60
 
+    balance = get_user_balance(user)
+
     return {
         "code": 0,
         "data": {
@@ -115,20 +73,25 @@ def get_me(authorization: str = Header(None), db: Session = Depends(get_db)):
             "nickname": user.nickname or "",
             "avatar": user.avatar or "",
             "plan": user.plan,
-            "monthly_minutes": user.monthly_minutes,
+            "monthly_minutes": balance["monthly"],
+            "permanent_minutes": balance["permanent"],
+            "total_minutes": balance["total"],
             "used_minutes": used_minutes,
+            "plan_expires_at": balance["plan_expires_at"],
+            "auto_renew": balance["auto_renew"],
+            "invite_code": user.invite_code,
             "created_at": user.created_at.isoformat() if user.created_at else None,
         },
     }
 
 
-# ==================== 微信登录 ====================
+# ==================== 微信登录（唯一登录方式）====================
 
 @router.get("/wechat/login")
-def wechat_login():
+def wechat_login(invite_code: str = ""):
     if not settings.WECHAT_APP_ID or not settings.WECHAT_APP_SECRET:
         raise HTTPException(status_code=500, detail="微信登录未配置")
-    url, state = get_wechat_auth_url(WECHAT_REDIRECT_URI)
+    url, state = get_wechat_auth_url(WECHAT_REDIRECT_URI, invite_code=invite_code)
     return {"code": 0, "data": {"url": url}}
 
 
@@ -139,6 +102,16 @@ def wechat_callback(code: str = "", state: str = "", db: Session = Depends(get_d
 
     if not verify_state_token(state):
         return HTMLResponse(content=_error_html("state 验证失败，请重新登录"))
+
+    # 从 state 中解析 invite_code（JWT payload 中）
+    invite_code = ""
+    try:
+        from app.services.auth import decode_token as _decode
+        payload = _decode(state)
+        if payload:
+            invite_code = payload.get("invite_code", "")
+    except Exception:
+        pass
 
     # 1. 用 code 换 access_token
     token_data = get_access_token(code)
@@ -164,15 +137,28 @@ def wechat_callback(code: str = "", state: str = "", db: Session = Depends(get_d
 
     # 3. 查找或创建用户
     user = db.query(User).filter(User.openid == openid).first()
+    is_new_user = False
     if not user:
+        is_new_user = True
         user = User(
             openid=openid,
             nickname=nickname,
             avatar=avatar,
             plan="free",
-            monthly_minutes=60,
+            monthly_minutes=0,
+            permanent_minutes=60,
         )
         db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        # 生成邀请码
+        get_or_create_invite_code(db, user)
+
+        # 绑定邀请关系
+        if invite_code:
+            bind_inviter(db, user, invite_code)
+
         db.commit()
         db.refresh(user)
     else:
@@ -185,15 +171,7 @@ def wechat_callback(code: str = "", state: str = "", db: Session = Depends(get_d
 
     # 4. 生成 JWT
     token = create_access_token({"sub": user.id})
-
-    user_data = {
-        "id": user.id,
-        "email": user.email or "",
-        "nickname": user.nickname or "",
-        "avatar": user.avatar or "",
-        "plan": user.plan,
-        "monthly_minutes": user.monthly_minutes,
-    }
+    user_data = _user_response(user, token)["data"]["user"]
 
     # 5. 返回 HTML，通过 postMessage 发送 token
     html = f"""<!DOCTYPE html>

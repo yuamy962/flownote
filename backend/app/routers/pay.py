@@ -1,12 +1,15 @@
 import json
 import time
 import random
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Plan, Order, PaymentLog, User
 from app.services.auth import decode_token
 from app.services.wechat_pay import get_wechat_pay
+from app.services.credits import set_subscription_minutes
+from app.services.invite import reward_purchase
 
 router = APIRouter(prefix="/pay", tags=["pay"])
 
@@ -39,14 +42,24 @@ def list_plans(db: Session = Depends(get_db)):
             {
                 "id": p.id,
                 "name": p.name,
-                "price": p.price_cent,  # 单位：分
+                "price": p.price_cent,
                 "price_yuan": p.price_cent / 100,
                 "duration_minutes": p.duration_minutes,
+                "validity_days": p.validity_days,
                 "description": p.description,
             }
             for p in plans
         ],
     }
+
+
+# ==================== 测试价映射（上线后删除）====================
+TEST_PRICE_MAP = {
+    "basic": 150,       # 标价¥15，测试扣¥1.5
+    "pro": 350,         # 标价¥35，测试扣¥3.5
+    "basic_year": 690,  # 标价¥69，测试扣¥6.9
+    "pro_year": 2390,   # 标价¥239，测试扣¥23.9
+}
 
 
 # ==================== 创建订单 + 获取支付二维码 ====================
@@ -62,14 +75,19 @@ def create_order(
     if not plan:
         raise HTTPException(status_code=400, detail="套餐不存在")
 
+    # 测试期间：实际扣款为测试价，但展示用原价
+    actual_price_cent = TEST_PRICE_MAP.get(plan_id, plan.price_cent)
+
     out_trade_no = _generate_out_trade_no()
     order = Order(
         user_id=user.id,
         plan_id=plan.id,
         out_trade_no=out_trade_no,
-        amount_cent=plan.price_cent,
+        amount_cent=actual_price_cent,
         status="pending",
         pay_channel="wx_native",
+        is_subscription=True,
+        subscription_months=1,
     )
     db.add(order)
     db.commit()
@@ -81,7 +99,7 @@ def create_order(
         result = wxpay.create_native_order(
             out_trade_no=out_trade_no,
             description=f"FlowNote {plan.name}",
-            amount_cent=plan.price_cent,
+            amount_cent=actual_price_cent,
         )
         code_url = result.get("code_url", "")
         if not code_url:
@@ -97,8 +115,9 @@ def create_order(
             "order_id": order.id,
             "out_trade_no": out_trade_no,
             "code_url": code_url,
-            "amount_cent": plan.price_cent,
-            "amount_yuan": plan.price_cent / 100,
+            "amount_cent": actual_price_cent,
+            "amount_yuan": actual_price_cent / 100,
+            "display_amount_yuan": plan.price_cent / 100,
             "plan_name": plan.name,
         },
     }
@@ -128,13 +147,53 @@ def get_order_status(
     }
 
 
+# ==================== 我的订单列表 ====================
+
+@router.get("/orders")
+def list_orders(
+    page: int = 1,
+    size: int = 20,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    offset = (page - 1) * size
+    orders = (
+        db.query(Order)
+        .filter(Order.user_id == user.id)
+        .order_by(Order.created_at.desc())
+        .offset(offset)
+        .limit(size)
+        .all()
+    )
+    total = db.query(Order).filter(Order.user_id == user.id).count()
+    return {
+        "code": 0,
+        "data": {
+            "total": total,
+            "page": page,
+            "size": size,
+            "items": [
+                {
+                    "id": o.id,
+                    "plan_id": o.plan_id,
+                    "status": o.status,
+                    "amount_cent": o.amount_cent,
+                    "amount_yuan": o.amount_cent / 100,
+                    "paid_at": o.paid_at.isoformat() if o.paid_at else None,
+                    "created_at": o.created_at.isoformat() if o.created_at else None,
+                }
+                for o in orders
+            ],
+        },
+    }
+
+
 # ==================== 微信支付回调（无需登录）====================
 
 @router.post("/notify")
 async def wechat_notify(request: Request, db: Session = Depends(get_db)):
     body_bytes = await request.body()
     body_str = body_bytes.decode("utf-8")
-    # 保留原始 Headers 对象（大小写不敏感），不要转 dict
     headers = request.headers
 
     print(f"[PayNotify] Received callback, body={body_str[:500]}")
@@ -165,7 +224,6 @@ async def wechat_notify(request: Request, db: Session = Depends(get_db)):
     order = db.query(Order).filter(Order.out_trade_no == out_trade_no).first()
     if not order:
         print(f"[PayNotify] Order not found: {out_trade_no}")
-        # 仍然返回成功，避免微信重复通知
         return {"code": "SUCCESS", "message": "OK"}
 
     # 幂等：已处理过的直接返回成功
@@ -186,20 +244,45 @@ async def wechat_notify(request: Request, db: Session = Depends(get_db)):
     if trade_state == "SUCCESS":
         order.status = "paid"
         order.channel_trade_no = transaction_id
-        from datetime import datetime
         order.paid_at = datetime.utcnow()
 
-        # 给用户更新套餐并加时长
+        # 给用户更新套餐
         plan = db.query(Plan).filter(Plan.id == order.plan_id).first()
         if plan:
             user = db.query(User).filter(User.id == order.user_id).first()
             if user:
+                now = datetime.utcnow()
                 user.plan = plan.id
-                if plan.id == "unlimited":
-                    user.monthly_minutes = 999999  # 无限版给一个足够大的数
+
+                # 有效期：根据套餐的 validity_days 设置
+                validity_days = plan.validity_days or 30
+                if validity_days >= 9999:
+                    # 终身套餐，设置一个极远的未来日期
+                    user.plan_expires_at = now + timedelta(days=365*100)
                 else:
-                    user.monthly_minutes += plan.duration_minutes
-                print(f"[PayNotify] User {user.id} upgraded to {plan.id}, minutes={user.monthly_minutes}")
+                    user.plan_expires_at = now + timedelta(days=validity_days)
+
+                # 套餐额度：覆盖 monthly_minutes（不是累加）
+                if plan.duration_minutes and plan.duration_minutes >= 999999:
+                    minutes = 999999
+                else:
+                    minutes = plan.duration_minutes or 0
+
+                validity_text = f"{validity_days}天" if validity_days < 9999 else "终身"
+                set_subscription_minutes(
+                    db, user.id, minutes,
+                    reference_id=order.id,
+                    description=f"购买{plan.name}，有效期{validity_text}"
+                )
+
+                # 记录 auto_renew（续费订单此字段后续会用到）
+                # 注：首次购买的 auto_renew 由前端 create-order 时的参数决定
+                # 这里不需要额外处理，因为用户可以在个人中心开关
+
+                print(f"[PayNotify] User {user.id} upgraded to {plan.id}, expires_at={user.plan_expires_at}")
+
+                # 触发邀请购买奖励
+                reward_purchase(db, user, plan.id)
 
     db.commit()
 

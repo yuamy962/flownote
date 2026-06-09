@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Video, Upload, Link, Lock, Clock, Zap, AlertCircle, FileText, X } from 'lucide-react';
+import { Video, Upload, Link, Lock, Clock, Zap, AlertCircle, FileText, X, Gem, Calendar } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 function UserInfo() {
@@ -21,8 +21,15 @@ function UserInfo() {
   }
   return (
     <div className="flex items-center gap-3">
-      <span className="text-gray-500">{user.email}</span>
-      <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">{user.plan === 'free' ? '免费版' : user.plan}</span>
+      <span className="text-gray-500 text-xs hidden sm:inline">{user.email || user.nickname}</span>
+      <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 text-xs rounded-full">
+        <Calendar className="w-3 h-3" />
+        {user.monthly_minutes || 0}
+      </span>
+      <span className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-600 text-xs rounded-full">
+        <Gem className="w-3 h-3" />
+        {user.permanent_minutes || 0}
+      </span>
       <button
         onClick={() => {
           localStorage.removeItem('token');
@@ -46,7 +53,31 @@ export default function Dashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [userBalance, setUserBalance] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    fetch('/api/credits/balance', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.code === 0) {
+          setUserBalance(json.data);
+          // 同时更新 localStorage 中的 user
+          const raw = localStorage.getItem('user');
+          if (raw) {
+            try {
+              const u = JSON.parse(raw);
+              u.monthly_minutes = json.data.monthly;
+              u.permanent_minutes = json.data.permanent;
+              localStorage.setItem('user', JSON.stringify(u));
+            } catch {}
+          }
+        }
+      });
+  }, []);
 
   const handleParse = async () => {
     if (!url.trim()) return;
@@ -73,6 +104,11 @@ export default function Dashboard() {
     return `${h}小时${m}分钟`;
   };
 
+  const estimatedMinutes = videoInfo ? Math.ceil(videoInfo.duration / 60) : 0;
+  const totalBalance = userBalance ? userBalance.total : 0;
+  const isUnlimited = userBalance && userBalance.plan === 'unlimited';
+  const hasEnoughBalance = isUnlimited || totalBalance >= estimatedMinutes;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b bg-white">
@@ -98,6 +134,31 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-8">
+        {/* 余额提示 */}
+        {userBalance && (
+          <div className="mb-6 flex items-center justify-between bg-white rounded-xl border border-gray-100 p-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5 text-sm">
+                <Calendar className="w-4 h-4 text-blue-600" />
+                <span className="text-gray-500">订阅：</span>
+                <span className="font-bold text-blue-600">{userBalance.monthly} 分钟</span>
+              </div>
+              <div className="w-px h-4 bg-gray-200" />
+              <div className="flex items-center gap-1.5 text-sm">
+                <Gem className="w-4 h-4 text-amber-600" />
+                <span className="text-gray-500">永久：</span>
+                <span className="font-bold text-amber-600">{userBalance.permanent} 分钟</span>
+              </div>
+            </div>
+            {userBalance.plan_expires_at && (
+              <span className="text-xs text-gray-400">
+                {userBalance.plan === 'free' ? '' : `${userBalance.plan} 套餐`}
+                {userBalance.plan !== 'free' && userBalance.plan_expires_at ? ` · 有效期至 ${new Date(userBalance.plan_expires_at).toLocaleDateString()}` : ''}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl">
           <button
             onClick={() => setActiveTab('link')}
@@ -178,12 +239,25 @@ export default function Dashboard() {
 
                 <div className="mt-4 pt-4 border-t border-gray-100">
                   <div className="flex items-center justify-between">
-                    <div className="text-sm text-gray-500">
-                      预计消耗时长：<span className="font-medium text-gray-900">{Math.ceil(videoInfo.duration / 60)} 分钟</span>
+                    <div className="text-sm">
+                      <span className="text-gray-500">预计消耗：</span>
+                      <span className="font-medium text-gray-900">{estimatedMinutes} 分钟</span>
+                      {!isUnlimited && (
+                        <span className="text-gray-400 ml-2">
+                          (当前余额 {totalBalance} 分钟)
+                        </span>
+                      )}
+                      {!hasEnoughBalance && (
+                        <span className="text-red-500 ml-2">余额不足</span>
+                      )}
                     </div>
                     <button
                       onClick={async () => {
                         if (!url.trim()) return;
+                        if (!hasEnoughBalance) {
+                          alert('时长不足，请前往购买套餐');
+                          return;
+                        }
                         setSubmitting(true);
                         try {
                           const token = localStorage.getItem('token');
@@ -212,7 +286,7 @@ export default function Dashboard() {
                         }
                         setSubmitting(false);
                       }}
-                      disabled={submitting}
+                      disabled={submitting || !hasEnoughBalance}
                       className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
                     >
                       {submitting ? '提交中...' : '开始转录'}
@@ -244,6 +318,11 @@ export default function Dashboard() {
                 <Upload className="w-10 h-10 text-gray-300 mx-auto mb-3" />
                 <p className="text-sm font-medium text-gray-700 mb-1">点击选择文件</p>
                 <p className="text-xs text-gray-400">支持 MP4 / MOV / MP3 / WAV，最大 500MB</p>
+                {userBalance && !isUnlimited && (
+                  <p className="text-xs text-gray-400 mt-2">
+                    当前余额 {totalBalance} 分钟，上传后按实际时长扣费
+                  </p>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -266,6 +345,10 @@ export default function Dashboard() {
                 <button
                   onClick={async () => {
                     if (!uploadFile) return;
+                    if (!isUnlimited && totalBalance < 1) {
+                      alert('时长不足，请前往购买套餐');
+                      return;
+                    }
                     setUploading(true);
                     try {
                       const token = localStorage.getItem('token');
@@ -288,7 +371,7 @@ export default function Dashboard() {
                     }
                     setUploading(false);
                   }}
-                  disabled={uploading}
+                  disabled={uploading || (!isUnlimited && totalBalance < 1)}
                   className="w-full px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
                 >
                   {uploading ? '上传中...' : '开始转录'}
