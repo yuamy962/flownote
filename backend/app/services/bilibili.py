@@ -1,15 +1,24 @@
 import re
 import httpx
 import random
+import time
 
 
 BV_PATTERN = re.compile(r"BV[a-zA-Z0-9]{10}")
 PAGE_PATTERN = re.compile(r"[?&]p=(\d+)")
 
 
-def _gen_buvid() -> str:
+def _gen_buvid3() -> str:
     """生成一个随机的 buvid3（B站反爬虫需要）"""
     return f"{random.randint(1000000000, 9999999999)}-{random.randint(1000000000, 9999999999)}-{''.join(random.choices('0123456789ABCDEF', k=36))}"
+
+
+def _gen_buvid4() -> str:
+    return f"{''.join(random.choices('0123456789ABCDEF', k=32))}-{random.randint(10000, 99999)}-{random.randint(100, 999)}-{random.randint(100, 999)}-{random.randint(1000000000000, 9999999999999)}-{''.join(random.choices('0123456789ABCDEF', k=32))}"
+
+
+def _gen_uuid() -> str:
+    return f"{''.join(random.choices('0123456789abcdef', k=8))}-{''.join(random.choices('0123456789abcdef', k=4))}-{''.join(random.choices('0123456789abcdef', k=4))}-{''.join(random.choices('0123456789abcdef', k=4))}-{''.join(random.choices('0123456789abcdef', k=12))}"
 
 
 def _headers() -> dict:
@@ -25,13 +34,22 @@ def _headers() -> dict:
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
     }
 
 
 def _cookies() -> dict:
+    buvid3 = _gen_buvid3()
     return {
-        "buvid3": _gen_buvid(),
-        "b_nut": str(random.randint(1000000000, 9999999999)),
+        "buvid3": buvid3,
+        "buvid4": _gen_buvid4(),
+        "b_nut": str(int(time.time())),
+        "CURRENT_FNVAL": "4048",
+        "_uuid": _gen_uuid(),
+        "buvid_fp": buvid3,
+        "b_lsid": f"{''.join(random.choices('0123456789ABCDEF', k=8))}_{int(time.time() * 1000 % 100000000)}",
     }
 
 

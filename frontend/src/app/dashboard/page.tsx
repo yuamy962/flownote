@@ -84,10 +84,21 @@ export default function Dashboard() {
     setLoading(true);
     setVideoInfo(null);
     try {
-      const res = await fetch(`/api/parse-bilibili?url=${encodeURIComponent(url.trim())}`);
-      const json = await res.json();
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/tasks/parse-bilibili?url=${encodeURIComponent(url.trim())}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = JSON.parse(text);
+      } catch {
+        alert('解析失败，服务器返回非 JSON: ' + text.slice(0, 200));
+        setLoading(false);
+        return;
+      }
       if (json.code !== 0) {
-        alert(json.message || '解析失败');
+        alert(json.message || json.detail || '解析失败');
         setLoading(false);
         return;
       }

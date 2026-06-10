@@ -6,10 +6,6 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/parse-bilibili/:path*',
-        destination: '/api/parse-bilibili/:path*',
-      },
-      {
         source: '/api/:path*',
         destination: 'http://118.25.22.220:8001/api/:path*',
       },

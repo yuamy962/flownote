@@ -214,6 +214,7 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
             return {"task_id": task_id, "status": "not_found"}
 
         task.status = "processing"
+        task.error_message = None  # 清空旧错误（Celery 重试时）
         db.commit()
 
         # 1. 获取音频文件（本地上传 or B站下载）
@@ -283,7 +284,10 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
                 task.summary = json.dumps(ai_result.get("summary", {}), ensure_ascii=False)
                 task.notes = ai_result.get("notes", "")
             except Exception as e:
+                task.status = "failed"
                 task.error_message = f"AI 生成失败: {str(e)}"
+                db.commit()
+                return {"task_id": task_id, "status": "failed", "error": str(e)}
 
         task.status = "done"
         from datetime import datetime

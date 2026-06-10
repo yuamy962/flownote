@@ -89,7 +89,12 @@ export default function ProcessingPage() {
   };
 
   const getStepStatus = (index: number) => {
-    if (status === 'failed') return index === currentStep ? 'failed' : index < currentStep ? 'completed' : 'pending';
+    if (status === 'failed') {
+      // 失败时：第一步解析总是完成（因为创建任务前就已解析），其余步骤不再显示假的"完成"
+      if (index === 0) return 'completed';
+      if (index === currentStep) return 'failed';
+      return 'pending';
+    }
     if (index < currentStep) return 'completed';
     if (index === currentStep) return 'active';
     return 'pending';
