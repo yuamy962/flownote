@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from celery import Celery
 from celery.signals import beat_init
 from app.config import settings
@@ -34,7 +34,7 @@ def check_expired_subscriptions():
 
     db = SessionLocal()
     try:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # 1. 到期前3天提醒
         remind_threshold = now + timedelta(days=3)

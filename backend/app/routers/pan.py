@@ -56,9 +56,9 @@ async def baidu_callback(code: str, state: str = "", db: Session = Depends(get_d
     if user:
         user.pan_baidu_token = token_data.get("access_token")
         user.pan_baidu_refresh = token_data.get("refresh_token")
-        from datetime import datetime, timedelta
+        from datetime import datetime, timezone, timedelta
         expires = token_data.get("expires_in", 2592000)
-        user.pan_baidu_expires = datetime.utcnow() + timedelta(seconds=expires)
+        user.pan_baidu_expires = datetime.now(timezone.utc) + timedelta(seconds=expires)
         db.commit()
 
     # 返回一个简单页面，通知前端授权成功

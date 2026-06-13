@@ -1,15 +1,19 @@
 import secrets
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from jose import jwt, JWTError
 from app.config import settings
+
+
+def _utc_now():
+    return datetime.now(timezone.utc)
 
 
 def create_state_token(invite_code: str = "") -> str:
     """生成用于微信 OAuth state 参数的 JWT（防 CSRF）"""
     payload = {
         "nonce": secrets.token_urlsafe(16),
-        "exp": datetime.utcnow() + timedelta(minutes=5),
+        "exp": _utc_now() + timedelta(minutes=5),
     }
     if invite_code:
         payload["invite_code"] = invite_code

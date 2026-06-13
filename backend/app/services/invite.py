@@ -3,7 +3,7 @@
 """
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.models import User, InviteReward
 from app.services.credits import add_permanent_minutes
@@ -71,7 +71,7 @@ def reward_first_task(db: Session, invitee: User) -> dict:
     if not reward:
         return {"inviter_rewarded": False, "invitee_rewarded": False}
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     desc = "邀请奖励-被邀请人完成首次转录"
 
     # 邀请人 +30
@@ -116,7 +116,7 @@ def reward_purchase(db: Session, invitee: User, plan_id: str) -> dict:
     if minutes <= 0:
         return {"rewarded": False, "minutes": 0}
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     desc = f"邀请奖励-被邀请人购买{plan_id}套餐"
 
     add_permanent_minutes(

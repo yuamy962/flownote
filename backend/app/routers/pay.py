@@ -1,7 +1,7 @@
 import json
 import time
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -244,14 +244,14 @@ async def wechat_notify(request: Request, db: Session = Depends(get_db)):
     if trade_state == "SUCCESS":
         order.status = "paid"
         order.channel_trade_no = transaction_id
-        order.paid_at = datetime.utcnow()
+        order.paid_at = datetime.now(timezone.utc)
 
         # 给用户更新套餐
         plan = db.query(Plan).filter(Plan.id == order.plan_id).first()
         if plan:
             user = db.query(User).filter(User.id == order.user_id).first()
             if user:
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 user.plan = plan.id
 
                 # 有效期：根据套餐的 validity_days 设置

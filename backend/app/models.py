@@ -1,11 +1,15 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, Integer, DateTime, Text, Boolean
 from app.database import Base
 
 
 def gen_uuid():
     return str(uuid.uuid4())
+
+
+def utc_now():
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
@@ -19,7 +23,7 @@ class User(Base):
     avatar = Column(String(512), nullable=True)
 
     plan = Column(String(20), default="free")
-    plan_expires_at = Column(DateTime, nullable=True)
+    plan_expires_at = Column(DateTime(timezone=True), nullable=True)
     auto_renew = Column(Boolean, default=False)
 
     monthly_minutes = Column(Integer, default=0)
@@ -30,8 +34,8 @@ class User(Base):
 
     pan_baidu_token = Column(String(512), nullable=True)
     pan_baidu_refresh = Column(String(512), nullable=True)
-    pan_baidu_expires = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    pan_baidu_expires = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
 
 
 class Task(Base):
@@ -53,8 +57,8 @@ class Task(Base):
     consumed_minutes = Column(Integer, nullable=True)
     cost_type = Column(String(20), default="free")
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class Plan(Base):
@@ -79,12 +83,12 @@ class Order(Base):
     status = Column(String(20), default="pending")
     pay_channel = Column(String(20), default="wx_native")
     channel_trade_no = Column(String(64), nullable=True)
-    paid_at = Column(DateTime, nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
 
     is_subscription = Column(Boolean, default=False)
     subscription_months = Column(Integer, default=1)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
 
 
 class PaymentLog(Base):
@@ -97,7 +101,7 @@ class PaymentLog(Base):
     amount_cent = Column(Integer)
     status = Column(String(20))
     notify_data = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
 
 
 class CreditTransaction(Base):
@@ -111,7 +115,7 @@ class CreditTransaction(Base):
     balance_after = Column(Integer, nullable=False)
     reference_id = Column(String(36), nullable=True)
     description = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
 
 
 class InviteReward(Base):
@@ -122,10 +126,10 @@ class InviteReward(Base):
     invitee_id = Column(String(36), nullable=False, unique=True, index=True)
     status = Column(String(20), default="registered")
 
-    first_task_rewarded_at = Column(DateTime, nullable=True)
+    first_task_rewarded_at = Column(DateTime(timezone=True), nullable=True)
 
     purchase_plan_id = Column(String(20), nullable=True)
     purchase_reward_minutes = Column(Integer, default=0)
-    purchase_rewarded_at = Column(DateTime, nullable=True)
+    purchase_rewarded_at = Column(DateTime(timezone=True), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now)

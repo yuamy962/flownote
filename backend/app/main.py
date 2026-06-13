@@ -13,24 +13,24 @@ Base.metadata.create_all(bind=engine)
 
 
 def _add_column_if_not_exists(conn, table, col_name, col_def):
-    """辅助：如果列不存在则添加"""
+    """辅助：如果列不存在则添加（PostgreSQL 兼容）"""
     inspector = inspect(engine)
     cols = {c["name"] for c in inspector.get_columns(table)}
     if col_name not in cols:
         try:
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"))
+            conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN IF NOT EXISTS "{col_name}" {col_def}'))
             print(f"[MIGRATE] Added column: {table}.{col_name}")
         except Exception as e:
             print(f"[MIGRATE] Failed to add {table}.{col_name}: {e}")
 
 
 def _create_index_if_not_exists(conn, table, idx_name, cols, unique=False):
-    """辅助：如果索引不存在则创建"""
+    """辅助：如果索引不存在则创建（PostgreSQL 兼容）"""
     inspector = inspect(engine)
     indexes = {idx["name"] for idx in inspector.get_indexes(table)}
     if idx_name not in indexes:
         u = "UNIQUE" if unique else ""
-        conn.execute(text(f"CREATE {u} INDEX IF NOT EXISTS {idx_name} ON {table} ({cols})"))
+        conn.execute(text(f'CREATE {u} INDEX IF NOT EXISTS "{idx_name}" ON "{table}" ({cols})'))
         print(f"[MIGRATE] Created index: {idx_name}")
 
 
@@ -40,7 +40,7 @@ def auto_migrate():
         with engine.connect() as conn:
             # ========== users 表 ==========
             _add_column_if_not_exists(conn, "users", "permanent_minutes", "INTEGER DEFAULT 60")
-            _add_column_if_not_exists(conn, "users", "auto_renew", "BOOLEAN DEFAULT 0")
+            _add_column_if_not_exists(conn, "users", "auto_renew", "BOOLEAN DEFAULT FALSE")
             _add_column_if_not_exists(conn, "users", "invite_code", "VARCHAR(16)")
             _add_column_if_not_exists(conn, "users", "invited_by", "VARCHAR(36)")
 
@@ -52,7 +52,7 @@ def auto_migrate():
             _add_column_if_not_exists(conn, "users", "avatar", "VARCHAR(512)")
             _add_column_if_not_exists(conn, "users", "pan_baidu_token", "VARCHAR(512)")
             _add_column_if_not_exists(conn, "users", "pan_baidu_refresh", "VARCHAR(512)")
-            _add_column_if_not_exists(conn, "users", "pan_baidu_expires", "DATETIME")
+            _add_column_if_not_exists(conn, "users", "pan_baidu_expires", "TIMESTAMP WITH TIME ZONE")
 
             _create_index_if_not_exists(conn, "users", "ix_users_openid", "openid", unique=True)
 
@@ -61,19 +61,18 @@ def auto_migrate():
             _add_column_if_not_exists(conn, "tasks", "cost_type", "VARCHAR(20) DEFAULT 'free'")
 
             # ========== orders 表 ==========
-            _add_column_if_not_exists(conn, "orders", "is_subscription", "BOOLEAN DEFAULT 0")
+            _add_column_if_not_exists(conn, "orders", "is_subscription", "BOOLEAN DEFAULT FALSE")
             _add_column_if_not_exists(conn, "orders", "subscription_months", "INTEGER DEFAULT 1")
 
             # ========== plans 表 ==========
             _add_column_if_not_exists(conn, "plans", "validity_days", "INTEGER DEFAULT 30")
 
             # 同步已有 plan 的 validity_days
-            conn.execute(text("UPDATE plans SET validity_days = 30 WHERE validity_days IS NULL OR validity_days = 0"))
+            conn.execute(text('UPDATE "plans" SET validity_days = 30 WHERE validity_days IS NULL OR validity_days = 0'))
 
             # 更新现有套餐为新的"便宜一半"定价
-            # basic: 1500分/600分钟/30天
             conn.execute(text("""
-                UPDATE plans SET
+                UPDATE "plans" SET
                     name = '轻量月卡',
                     price_cent = 1500,
                     duration_minutes = 600,
@@ -83,9 +82,8 @@ def auto_migrate():
                 WHERE id = 'basic'
             """))
 
-            # pro: 3500分/6000分钟/30天
             conn.execute(text("""
-                UPDATE plans SET
+                UPDATE "plans" SET
                     name = '专业月卡',
                     price_cent = 3500,
                     duration_minutes = 6000,
@@ -97,23 +95,23 @@ def auto_migrate():
 
             # 将 unlimited 下架（不再售卖，但不删除以免影响历史订单）
             conn.execute(text("""
-                UPDATE plans SET
+                UPDATE "plans" SET
                     name = '已下架',
                     sort_order = 99
                 WHERE id = 'unlimited'
             """))
 
             # 插入年付套餐（如果不存在）
-            existing_plan_ids = {row[0] for row in conn.execute(text("SELECT id FROM plans")).fetchall()}
+            existing_plan_ids = {row[0] for row in conn.execute(text('SELECT id FROM "plans"')).fetchall()}
             if "basic_year" not in existing_plan_ids:
                 conn.execute(text("""
-                    INSERT INTO plans (id, name, price_cent, duration_minutes, validity_days, description, sort_order)
+                    INSERT INTO "plans" (id, name, price_cent, duration_minutes, validity_days, description, sort_order)
                     VALUES ('basic_year', '轻量年卡', 6900, 7200, 365, '7200分钟转录时长（600分钟/月×12），年付更划算', 3)
                 """))
                 print("[MIGRATE] Added plan: basic_year")
             if "pro_year" not in existing_plan_ids:
                 conn.execute(text("""
-                    INSERT INTO plans (id, name, price_cent, duration_minutes, validity_days, description, sort_order)
+                    INSERT INTO "plans" (id, name, price_cent, duration_minutes, validity_days, description, sort_order)
                     VALUES ('pro_year', '专业年卡', 23900, 72000, 365, '72000分钟转录时长（6000分钟/月×12），重度用户首选', 4)
                 """))
                 print("[MIGRATE] Added plan: pro_year")

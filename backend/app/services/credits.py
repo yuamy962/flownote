@@ -2,7 +2,7 @@
 双轨时长管理：订阅时长(monthly) + 永久时长(permanent)
 """
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.models import User, CreditTransaction
 
@@ -124,7 +124,7 @@ def deduct_minutes(
     扣费时优先扣 monthly，不足扣 permanent
     返回: {"success": bool, "monthly_deducted": int, "permanent_deducted": int, "cost_type": str}
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # unlimited 套餐且未过期 → 直接通过
     if user.plan == "unlimited" and user.plan_expires_at and user.plan_expires_at > now:

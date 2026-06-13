@@ -330,8 +330,8 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
                 return {"task_id": task_id, "status": "failed", "error": str(e)}
 
         task.status = "done"
-        from datetime import datetime
-        task.completed_at = datetime.utcnow()
+        from datetime import datetime, timezone
+        task.completed_at = datetime.now(timezone.utc)
         db.commit()
 
         # 4. 上传任务：补扣或返还时长差额
