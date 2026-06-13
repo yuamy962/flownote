@@ -2,14 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Video, User, Mail, Zap, Clock, Package, Crown, Loader2,
+  Video, User, Zap, Clock, Package, Loader2,
   Gem, Wallet, ShoppingBag, Users, Copy, Check, Calendar,
   ArrowUpRight, ArrowDownRight, CreditCard
 } from 'lucide-react';
 
 interface UserData {
   id: string;
-  email: string;
   nickname: string;
   avatar: string;
   plan: string;
@@ -218,8 +217,8 @@ export default function ProfilePage() {
                     <User className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">账户邮箱</p>
-                    <p className="text-sm font-medium text-gray-900">{user?.email || user?.nickname || '未设置'}</p>
+                    <p className="text-xs text-gray-500">微信昵称</p>
+                    <p className="text-sm font-medium text-gray-900">{user?.nickname || '微信用户'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

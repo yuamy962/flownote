@@ -1,7 +1,6 @@
 import json
 import os
 import tempfile
-import asyncio
 import re
 import shutil
 import subprocess
@@ -44,10 +43,10 @@ def _merge_segments(segment_files: list, output_file: str):
         with open(list_file, "w") as f:
             for seg in segment_files:
                 f.write(f"file '{seg}'\n")
+        # 通过 shell 调用 ffmpeg，让 bash 加载用户 PATH
         subprocess.run(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file, "-c", "copy", output_file],
-            check=True,
-            capture_output=True,
+            f"ffmpeg -y -f concat -safe 0 -i '{list_file}' -c copy '{output_file}'",
+            shell=True, check=True, capture_output=True,
         )
         print(f"[DEBUG] ffmpeg 合并成功: {output_file}")
         return True
@@ -61,15 +60,55 @@ def _merge_segments(segment_files: list, output_file: str):
         return False
 
 
+def _find_ffmpeg() -> str:
+    """查找 ffmpeg 可执行文件（通过 bash 加载用户 PATH）"""
+    import shutil
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+    for candidate in ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/bin/ffmpeg", "/snap/bin/ffmpeg"]:
+        if os.path.exists(candidate):
+            return candidate
+    return "ffmpeg"
+
+
+def _find_ffprobe() -> str:
+    """查找 ffprobe 可执行文件"""
+    import shutil
+    path = shutil.which("ffprobe")
+    if path:
+        return path
+    for candidate in ["/usr/bin/ffprobe", "/usr/local/bin/ffprobe", "/bin/ffprobe", "/snap/bin/ffprobe"]:
+        if os.path.exists(candidate):
+            return candidate
+    return "ffprobe"
+
+
+def _extract_audio_to_mp3(input_path: str) -> str:
+    """用 ffmpeg 从视频/音频中提取纯音频 MP3，大幅减小文件体积"""
+    base, _ = os.path.splitext(input_path)
+    output_path = base + "_audio.mp3"
+    if os.path.exists(output_path):
+        return output_path
+    try:
+        # 通过 shell 调用 ffmpeg，让 bash 加载用户 PATH
+        subprocess.run(
+            f"ffmpeg -y -i '{input_path}' -vn -acodec libmp3lame -q:a 4 '{output_path}'",
+            shell=True, check=True, capture_output=True, timeout=120
+        )
+        print(f"[DEBUG] ffmpeg 提取音频成功: {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"[DEBUG] ffmpeg 提取音频失败: {e}, 使用原文件")
+        return input_path
+
+
 def _get_audio_duration(file_path: str) -> float:
     """使用 ffprobe 获取音频/视频时长（秒）"""
     try:
         result = subprocess.run(
-            [
-                "ffprobe", "-v", "error", "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1", file_path
-            ],
-            capture_output=True, text=True, timeout=30
+            f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 '{file_path}'",
+            shell=True, capture_output=True, text=True, timeout=30
         )
         duration = float(result.stdout.strip())
         return duration
@@ -245,12 +284,13 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
             task.duration = int(actual_duration)
             db.commit()
 
+        # 1.5 提取纯音频（视频文件太大，直接上传会超时）
+        audio_only_file = _extract_audio_to_mp3(audio_file)
+        print(f"[DEBUG] 提取音频: {audio_only_file}, 大小: {os.path.getsize(audio_only_file)} bytes")
+
         # 2. 调用 GPU Whisper 转录
         try:
-            with open(audio_file, "rb") as f:
-                file_data = f.read()
-            print(f"[DEBUG] 上传 GPU: {audio_file}, 大小: {len(file_data)} bytes")
-            result = asyncio.run(transcribe_audio(file_data, os.path.basename(audio_file)))
+            result = transcribe_audio(audio_only_file)
             print(f"[DEBUG] GPU 返回: {result}")
             transcript = result.get("text", "")
             if not transcript:
@@ -280,7 +320,7 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
         # 3. 调用 DeepSeek 生成总结
         if task.transcript:
             try:
-                ai_result = asyncio.run(generate_notes(task.transcript))
+                ai_result = generate_notes(task.transcript)
                 task.summary = json.dumps(ai_result.get("summary", {}), ensure_ascii=False)
                 task.notes = ai_result.get("notes", "")
             except Exception as e:

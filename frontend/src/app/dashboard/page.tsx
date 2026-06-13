@@ -21,7 +21,7 @@ function UserInfo() {
   }
   return (
     <div className="flex items-center gap-3">
-      <span className="text-gray-500 text-xs hidden sm:inline">{user.email || user.nickname}</span>
+      <span className="text-gray-500 text-xs hidden sm:inline">{user.nickname || '微信用户'}</span>
       <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 text-xs rounded-full">
         <Calendar className="w-3 h-3" />
         {user.monthly_minutes || 0}
