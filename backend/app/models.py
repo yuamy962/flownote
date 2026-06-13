@@ -68,6 +68,7 @@ class Plan(Base):
     name = Column(String(50), nullable=False)
     price_cent = Column(Integer, nullable=False)
     duration_minutes = Column(Integer, default=0)
+    validity_days = Column(Integer, default=30)
     description = Column(Text)
     sort_order = Column(Integer, default=0)
 

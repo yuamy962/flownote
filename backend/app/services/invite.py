@@ -109,7 +109,9 @@ def reward_purchase(db: Session, invitee: User, plan_id: str) -> dict:
     # 奖励梯度
     reward_map = {
         "basic": 60,
+        "basic_year": 120,
         "pro": 150,
+        "pro_year": 300,
         "unlimited": 300,
     }
     minutes = reward_map.get(plan_id, 0)
