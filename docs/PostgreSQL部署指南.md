@@ -68,7 +68,7 @@ sudo -u postgres psql
 
 ```sql
 -- 创建数据库用户（密码请修改为强密码）
-CREATE USER flownote WITH PASSWORD 'flownote_password';
+CREATE USER flownote WITH PASSWORD 'FN_QH_bss_0971';
 
 -- 创建数据库
 CREATE DATABASE flownote OWNER flownote;
@@ -95,7 +95,7 @@ psql -U flownote -d flownote -h localhost -W
 ### 4.1 编辑配置文件
 
 ```bash
-sudo nano /etc/postgresql/16/main/postgresql.conf
+sudo vi /etc/postgresql/16/main/postgresql.conf
 ```
 
 ### 4.2 修改以下配置项
@@ -131,7 +131,7 @@ timezone = 'Asia/Shanghai'
 ### 4.3 配置访问权限
 
 ```bash
-sudo nano /etc/postgresql/16/main/pg_hba.conf
+sudo vi /etc/postgresql/16/main/pg_hba.conf
 ```
 
 确保有以下行（本地连接使用密码认证）：
@@ -174,16 +174,16 @@ ssh -L 5433:localhost:5432 root@118.25.22.220
 
 ```bash
 cd /opt/flownote/backend
-nano .env
+vi .env
 ```
 
 ### 6.2 添加/修改数据库连接
 
 ```ini
-DATABASE_URL=postgresql://flownote:flownote_password@localhost:5432/flownote
+DATABASE_URL=postgresql://flownote:FN_QH_bss_0971@localhost:5432/flownote
 ```
 
-> **注意**：请将 `flownote_password` 替换为你在 3.2 步骤中设置的实际密码。
+> **注意**：如果密码与上述不同，请替换为实际密码。
 
 ---
 
@@ -254,7 +254,7 @@ pip install sqlite3-to-postgres
 # 方法1：使用 pgloader（推荐，处理类型转换更好）
 sudo apt-get install pgloader
 
-pgloader sqlite:///opt/flownote/backend/videonotes.db postgresql://flownote:flownote_password@localhost:5432/flownote
+pgloader sqlite:///opt/flownote/backend/videonotes.db postgresql://flownote:FN_QH_bss_0971@localhost:5432/flownote
 ```
 
 或者手动迁移：
@@ -276,7 +276,7 @@ pg_conn = psycopg2.connect(
     host='localhost',
     database='flownote',
     user='flownote',
-    password='flownote_password'
+    password='FN_QH_bss_0971'
 )
 pg_cur = pg_conn.cursor()
 
@@ -492,12 +492,12 @@ sudo systemctl start flownote-celery
 |--------|-----|------|
 | 数据库名 | `flownote` | PostgreSQL |
 | 用户名 | `flownote` | PostgreSQL |
-| 密码 | `flownote_password` | PostgreSQL / .env |
+| 密码 | `FN_QH_bss_0971` | PostgreSQL / .env |
 | 监听地址 | `localhost` | postgresql.conf |
 | 端口 | `5432` | 默认 |
 | 最大连接数 | `50` | postgresql.conf |
 | shared_buffers | `256MB` | postgresql.conf |
-| 后端连接串 | `postgresql://flownote:flownote_password@localhost:5432/flownote` | .env |
+| 后端连接串 | `postgresql://flownote:FN_QH_bss_0971@localhost:5432/flownote` | .env |
 
 ---
 

@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql://flownote:flownote_password@localhost:5432/flownote"
+    DATABASE_URL: str = "postgresql://flownote:FN_QH_bss_0971@localhost:5432/flownote"
     REDIS_URL: str = "redis://localhost:6379/0"
     HAI_WHISPER_URL: str = "http://119.45.200.37:8000"
     SECRET_KEY: str = "your-secret-key-change-in-production"
