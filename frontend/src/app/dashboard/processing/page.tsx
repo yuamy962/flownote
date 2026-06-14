@@ -12,8 +12,8 @@ interface TaskStep {
 const steps: TaskStep[] = [
   { label: '解析视频', description: '获取视频信息和字幕' },
   { label: '音频提取', description: '从视频中提取音频流' },
-  { label: 'AI 转录', description: 'Whisper 模型识别语音' },
-  { label: '生成笔记', description: 'DeepSeek 分析内容结构' },
+  { label: 'AI 转录', description: '智能语音识别' },
+  { label: '生成笔记', description: '分析内容结构' },
   { label: '完成', description: '笔记已生成' },
 ];
 
@@ -27,11 +27,26 @@ export default function ProcessingPage() {
   const [videoTitle, setVideoTitle] = useState('处理中...');
   const [error, setError] = useState('');
   const [status, setStatus] = useState<'processing' | 'done' | 'failed'>('processing');
+  const [userBalance, setUserBalance] = useState<{ monthly: number; permanent: number; total: number } | null>(null);
 
   // 计时器
   useEffect(() => {
     const timer = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // 获取用户余额
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    fetch('/api/credits/balance', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.code === 0) {
+          setUserBalance(json.data);
+        }
+      });
   }, []);
 
   // 轮询任务状态
@@ -109,7 +124,11 @@ export default function ProcessingPage() {
             返回工作台
           </a>
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-gray-500">剩余 60 分钟</span>
+            {userBalance && (
+              <span className="text-gray-500">
+                订阅 {userBalance.monthly} / 永久 {userBalance.permanent}
+              </span>
+            )}
             <a href="/pricing" className="text-blue-600 hover:underline">升级</a>
           </div>
         </div>

@@ -7,14 +7,19 @@ import { useRouter } from 'next/navigation';
 function UserInfo() {
   const [user, setUser] = useState<any>(null);
   useEffect(() => {
-    const raw = localStorage.getItem('user');
-    if (raw) {
-      try {
-        setUser(JSON.parse(raw));
-      } catch {
-        setUser(null);
+    const load = () => {
+      const raw = localStorage.getItem('user');
+      if (raw) {
+        try {
+          setUser(JSON.parse(raw));
+        } catch {
+          setUser(null);
+        }
       }
-    }
+    };
+    load();
+    window.addEventListener('storage', load);
+    return () => window.removeEventListener('storage', load);
   }, []);
   if (!user) {
     return <a href="/login" className="text-gray-600 hover:text-gray-900">登录</a>;
@@ -56,7 +61,7 @@ export default function Dashboard() {
   const [userBalance, setUserBalance] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const refreshBalance = () => {
     const token = localStorage.getItem('token');
     fetch('/api/credits/balance', {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
@@ -77,6 +82,10 @@ export default function Dashboard() {
           }
         }
       });
+  };
+
+  useEffect(() => {
+    refreshBalance();
   }, []);
 
   const handleParse = async () => {
@@ -287,6 +296,7 @@ export default function Dashboard() {
                             return;
                           }
                           const task = json.data;
+                          refreshBalance(); // 刷新余额
                           if (task.status === 'done') {
                             router.push(`/dashboard/result?id=${task.id}`);
                           } else {
@@ -359,6 +369,12 @@ export default function Dashboard() {
                     if (!isUnlimited && totalBalance < 1) {
                       alert('时长不足，请前往购买套餐');
                       return;
+                    }
+                    // 本地上传按实际时长扣费，请确保余额充足
+                    if (!isUnlimited && totalBalance < 5) {
+                      if (!confirm(`当前余额仅 ${totalBalance} 分钟，本地上传将按实际时长扣费，可能余额不足。是否继续？`)) {
+                        return;
+                      }
                     }
                     setUploading(true);
                     try {

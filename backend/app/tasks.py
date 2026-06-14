@@ -352,6 +352,21 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
                     if deduct_result["success"]:
                         task.consumed_minutes = actual_minutes
                         db.commit()
+                    else:
+                        # 补扣失败：标记任务为失败并返还已扣的1分钟
+                        print(f"[UploadTask] 补扣失败，余额不足。用户ID={user.id}, 需要补扣={diff}分钟")
+                        task.status = "failed"
+                        task.error_message = f"转录完成但余额不足无法补扣时长（预估{estimated}分钟，实际{actual_minutes}分钟），已返还预估的{estimated}分钟"
+                        # 返还预估的1分钟
+                        user.permanent_minutes = (user.permanent_minutes or 0) + estimated
+                        from app.services.credits import _create_transaction
+                        _create_transaction(
+                            db, user.id, "task_refund", estimated, "permanent",
+                            user.permanent_minutes, task.id,
+                            f"上传视频补扣失败返还（预估{estimated}分钟，实际{actual_minutes}分钟）"
+                        )
+                        db.commit()
+                        return {"task_id": task_id, "status": "failed", "error": task.error_message}
                 elif diff < 0:
                     # 需要返还
                     refund = -diff

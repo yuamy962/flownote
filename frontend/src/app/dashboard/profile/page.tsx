@@ -135,8 +135,10 @@ export default function ProfilePage() {
   const PlanIcon = plan.icon;
 
   const copyInviteLink = () => {
-    if (!inviteInfo?.invite_url) return;
-    navigator.clipboard.writeText(inviteInfo.invite_url);
+    const code = user?.invite_code;
+    if (!code) return;
+    const url = `https://flownote.cn?invite=${code}`;
+    navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
