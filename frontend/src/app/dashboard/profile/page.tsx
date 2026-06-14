@@ -71,6 +71,13 @@ const txTypeLabels: Record<string, string> = {
   admin_adjust: '管理员调整',
 };
 
+const orderStatusConfig: Record<string, { label: string; color: string }> = {
+  paid: { label: '已支付', color: 'bg-green-50 text-green-600' },
+  pending: { label: '待支付', color: 'bg-amber-50 text-amber-600' },
+  failed: { label: '已取消', color: 'bg-gray-100 text-gray-500' },
+  expired: { label: '已过期', color: 'bg-gray-100 text-gray-500' },
+};
+
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'orders' | 'invites'>('overview');
   const [user, setUser] = useState<UserData | null>(null);
@@ -173,6 +180,13 @@ export default function ProfilePage() {
               <a href="/dashboard" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">工作台</a>
               <a href="/dashboard/history" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">历史记录</a>
               <a href="/dashboard/profile" className="px-3 py-1.5 text-blue-600 bg-blue-50 rounded-lg font-medium">用户中心</a>
+              <a
+                href="/pricing"
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg font-medium hover:from-amber-600 hover:to-orange-600 transition-all shadow-sm"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                购买套餐
+              </a>
             </nav>
           </div>
         </div>
@@ -368,9 +382,9 @@ export default function ProfilePage() {
                     <div className="text-right">
                       <p className="text-sm font-bold text-gray-900">¥{o.amount_yuan}</p>
                       <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        o.status === 'paid' ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'
+                        (orderStatusConfig[o.status]?.color || 'bg-gray-100 text-gray-500')
                       }`}>
-                        {o.status === 'paid' ? '已支付' : o.status}
+                        {orderStatusConfig[o.status]?.label || o.status}
                       </span>
                     </div>
                   </div>

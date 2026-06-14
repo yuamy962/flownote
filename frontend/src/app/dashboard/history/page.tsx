@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Video, Clock, CheckCircle, XCircle, Loader2, Trash2, ExternalLink, FileText } from 'lucide-react';
+import { Video, Clock, CheckCircle, XCircle, Loader2, Trash2, ExternalLink, FileText, Zap } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -85,6 +85,13 @@ export default function HistoryPage() {
               <a href="/dashboard" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">工作台</a>
               <a href="/dashboard/history" className="px-3 py-1.5 text-blue-600 bg-blue-50 rounded-lg font-medium">历史记录</a>
               <a href="/dashboard/profile" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">用户中心</a>
+              <a
+                href="/pricing"
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg font-medium hover:from-amber-600 hover:to-orange-600 transition-all shadow-sm"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                购买套餐
+              </a>
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">

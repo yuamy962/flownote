@@ -1,7 +1,14 @@
 # FlowNote 项目上下文
 
 > 每次新开会话时，请先阅读本文档以快速恢复项目记忆
-> 最后更新：2026-06-13
+> 最后更新：2026-06-14
+
+---
+
+## 零：重要整个会话保持以下两点记忆，全会话窗口有效
+1. 每次问答完告诉我这个是当前会话第几轮
+2. 如果有代码的变更，直接生成scp的代码拷贝的命令
+3. 如果在第8轮的时候，直接整理当前会话内容上下文，放到此文档中，然后提醒打开新的窗口进行任务继续
 
 ---
 
@@ -66,6 +73,14 @@
 | credit_transactions | 分钟变动 | user_id, type, amount, balance_type, balance_after |
 | invite_rewards | 邀请奖励 | inviter_id, invitee_id, status |
 
+**重要字段说明**：
+- `users.plan`: 当前套餐ID（free/basic/pro/basic_year/pro_year）
+- `users.monthly_minutes`: 订阅时长（按月扣减）
+- `users.permanent_minutes`: 永久时长（注册送/邀请得）
+- `users.plan_expires_at`: 套餐过期时间（续费叠加逻辑关键字段）
+- `tasks.monthly_deducted`: 任务扣费时记录的订阅分钟数（用于精确返还）
+- `tasks.permanent_deducted`: 任务扣费时记录的永久分钟数（用于精确返还）
+
 ---
 
 ## 五、后端路由
@@ -91,9 +106,10 @@
 | services/deepseek.py | DeepSeek AI 摘要/笔记 |
 | services/bilibili.py | B站视频信息/字幕提取 |
 | services/wechat_pay.py | 微信支付下单/回调 |
-| services/credits.py | 分钟额度管理 |
+| services/credits.py | 分钟额度管理（扣费/返还/查询） |
 | services/invite.py | 邀请码与奖励逻辑 |
 | services/pan_baidu.py | 百度网盘接入 |
+| services/video_utils.py | 公共视频时长获取工具（ffprobe） |
 
 ---
 
@@ -105,11 +121,11 @@
 | /login | 微信扫码登录 |
 | /register | 注册（微信回调） |
 | /dashboard | 主面板（用户信息 + 新建任务） |
-| /dashboard/processing | 任务处理中 |
+| /dashboard/processing | 任务处理中（含预估时间倒计时） |
 | /dashboard/result | 任务结果（笔记/摘要） |
 | /dashboard/history | 历史记录 |
 | /dashboard/profile | 个人资料 |
-| /pricing | 定价页 |
+| /pricing | 定价页（月付/年付切换） |
 | /terms | 服务条款 |
 | /privacy | 隐私政策 |
 
@@ -174,14 +190,91 @@ PGPASSWORD=FN_QH_bss_0971 psql -U flownote -d flownote -h localhost  # flownote 
 
 ## 十一、已完成的重要变更
 
-1. **登录系统**: 移除邮箱/密码登录，仅保留微信扫码登录
-2. **数据库迁移**: SQLite → PostgreSQL 16（2026-06-13 完成）
-3. **数据迁移**: SQLite 全量数据已迁移至 PG（users:3, tasks:35, orders:10, plans:5 等）
-4. **依赖变更**: 移除 passlib[bcrypt]，新增 psycopg2-binary==2.9.9
+### 1. 登录系统（2026-06-13）
+- 移除邮箱/密码登录，仅保留微信扫码登录
+
+### 2. 数据库迁移（2026-06-13）
+- SQLite → PostgreSQL 16
+- SQLite 全量数据已迁移至 PG（users:3, tasks:35, orders:10, plans:5 等）
+- 依赖变更: 移除 passlib[bcrypt]，新增 psycopg2-binary==2.9.9
+
+### 3. 扣费逻辑重构（2026-06-14）
+- **问题**: 本地上传预扣 1 分钟导致少扣；B站无字幕视频预扣时长和实际不符导致多扣
+- **修复**: 所有 GPU 转录任务（上传 + B站无字幕）统一在转录完成后按实际时长一次性扣费
+- **余额预检**: 上传接口用 ffprobe 获取视频时长后立即检查余额；B站无字幕视频解析后检查余额，不足直接提示，不占用 GPU 资源
+- **新增文件**: `backend/app/services/video_utils.py`
+
+### 4. 订单状态优化（2026-06-14）
+- **问题**: 未支付订单显示为 `pending`（英文），用户体验差
+- **修复**: 前端增加状态映射（待支付/已支付/已取消/已过期）；后端 Celery 定时任务每小时清理超过 24 小时的 pending 订单为 expired
+
+### 5. 转录任务预估时间显示（2026-06-14）
+- **文件**: `frontend/src/app/dashboard/processing/page.tsx`
+- **新增**: 预估总时间和剩余时间显示，进度条改为倒计时风格
+- **核心函数**:
+  ```typescript
+  function estimateTotalSeconds(duration: number, processingPath: string): number {
+    if (processingPath === 'subtitle') return 15;
+    const minutes = Math.ceil(duration / 60);
+    const estimatedMinutes = Math.max(1, Math.ceil(minutes * 0.4));
+    return estimatedMinutes * 60;
+  }
+  ```
+
+### 6. 转录失败时长返还（2026-06-14）
+- **问题**: 字幕直出AI失败、Celery任务异常等场景下未返还已扣时长
+- **修复**:
+  - `backend/app/routers/tasks.py`: AI失败时调用 `refund_task_minutes` 返还
+  - `backend/app/tasks.py`: Celery异常时检查已扣费并返还
+  - `backend/app/models.py`: Task模型新增 `monthly_deducted` 和 `permanent_deducted` 字段
+- **核心逻辑**: 基于 `monthly_deducted` 和 `permanent_deducted` 精确返还到对应账户
+
+### 7. 续费叠加逻辑（2026-06-14）
+- **文件**: `backend/app/routers/pay.py`
+- **问题**: 每次购买覆盖有效期和分钟数，导致用户损失剩余时长
+- **修复**:
+  - **同档位续费**: 有效期从旧过期时间续加，分钟数累加
+  - **升级/降级**: 旧套餐剩余订阅分钟转为永久分钟（不丢失）
+  - **新购/过期续费**: 从现在开始算
+- **核心代码**:
+  ```python
+  is_renewal = old_plan == plan.id and user.plan_expires_at and user.plan_expires_at > now
+  if is_renewal:
+      user.plan_expires_at = user.plan_expires_at + timedelta(days=validity_days)
+      add_monthly_minutes(db, user.id, minutes, ...)
+  else:
+      if old_monthly > 0 and old_plan != "free":
+          add_permanent_minutes(db, user.id, old_monthly, ...)
+      set_subscription_minutes(db, user.id, minutes, ...)
+  ```
+
+### 8. 定价页面月付/年付显示修复（2026-06-14）
+- **文件**: `frontend/src/app/pricing/page.tsx`
+- **问题**: 年付卡片显示 `¥69/月`、`¥239/月`，但价格是年价
+- **修复**:
+  - 年付价格标签改为 `/年`
+  - 新增月均提示：`约 ¥5.75/月，年付更划算`
+
+### 9. Dashboard 购买套餐按钮（2026-06-14）
+- **文件**: `frontend/src/app/dashboard/page.tsx`
+- **修改**: 在余额提示区域右侧新增"购买套餐"按钮，始终显示，点击直达 `/pricing`
+- **样式**: 蓝色渐变背景，带闪电图标，加粗文字
 
 ---
 
-## 十二、docs 目录文档索引
+## 十二、待确认/待修复问题
+
+1. **套餐显示异常**: 已购买套餐但显示"免费版"
+   - **可能原因**: 前端 `profile/page.tsx` 用 `plans[user.plan]` 查找套餐名称，若数据库 `plan` 字段值不匹配映射表 key 则 fallback 到 `free`；或 `plan_expires_at` 已过期
+   - **建议**: 检查数据库中用户的 `plan` 和 `plan_expires_at` 字段值
+
+2. **Dashboard 购买按钮未显示**: 代码已添加但用户反馈未看到
+   - **可能原因**: 浏览器缓存、部署未生效、或样式被覆盖
+   - **当前状态**: 已加大按钮尺寸和颜色对比度，待用户确认
+
+---
+
+## 十三、docs 目录文档索引
 
 | 文档 | 用途 |
 |---|---|
@@ -190,3 +283,18 @@ PGPASSWORD=FN_QH_bss_0971 psql -U flownote -d flownote -h localhost  # flownote 
 | 支付接入测试文档.md | 微信支付接入参考 |
 | 运维部署手册.md | 日常运维速查 |
 | PostgreSQL部署指南.md | PG 部署/备份/恢复 |
+
+---
+
+## 十四、关键文件速查
+
+| 文件 | 说明 |
+|---|---|
+| `backend/app/routers/pay.py` | 支付下单、续费叠加逻辑 |
+| `backend/app/routers/tasks.py` | 任务创建、字幕直出、AI生成、失败返还 |
+| `backend/app/tasks.py` | Celery GPU转录任务、异常返还 |
+| `backend/app/services/credits.py` | 双轨时长管理（扣费/返还/查询） |
+| `backend/app/models.py` | 数据库模型（含 monthly_deducted/permanent_deducted） |
+| `frontend/src/app/pricing/page.tsx` | 定价页面（月付/年付切换） |
+| `frontend/src/app/dashboard/page.tsx` | 工作台（余额显示、购买按钮） |
+| `frontend/src/app/dashboard/processing/page.tsx` | 处理中页面（预估时间倒计时） |

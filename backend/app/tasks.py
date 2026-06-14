@@ -10,7 +10,7 @@ from app.database import SessionLocal
 from app.models import Task, User
 from app.services.deepseek import generate_notes
 from app.services.whisper import transcribe_audio
-from app.services.credits import deduct_minutes, refund_task_minutes
+from app.services.credits import deduct_minutes, refund_task_minutes, get_user_balance
 from app.services.invite import reward_first_task
 import httpx
 
@@ -241,22 +241,40 @@ def _find_downloaded_file(output_path: str) -> str:
     raise FileNotFoundError(f"下载后未找到音频文件: {output_path}")
 
 
+def _update_task_status(task_id: str, **kwargs):
+    """短数据库操作：更新任务状态后立即关闭连接"""
+    db = next(_get_db())
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        if task:
+            for key, value in kwargs.items():
+                setattr(task, key, value)
+            db.commit()
+    finally:
+        db.close()
+
+
+def _get_task_field(task_id: str, field: str):
+    """短数据库操作：获取任务指定字段值"""
+    db = next(_get_db())
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        return getattr(task, field, None) if task else None
+    finally:
+        db.close()
+
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def transcribe_video(self, task_id: str, source_url: str = None, file_path: str = None):
     """Celery 任务：下载音频 / 读取本地文件 → GPU Whisper 转录 → DeepSeek 生成总结"""
-    db = next(_get_db())
     audio_file = None
     tmpdir = None
+
+    # 1. 更新状态为 processing（短连接）
+    _update_task_status(task_id, status="processing", error_message=None)
+
     try:
-        task = db.query(Task).filter(Task.id == task_id).first()
-        if not task:
-            return {"task_id": task_id, "status": "not_found"}
-
-        task.status = "processing"
-        task.error_message = None  # 清空旧错误（Celery 重试时）
-        db.commit()
-
-        # 1. 获取音频文件（本地上传 or B站下载）
+        # 2. 获取音频文件（长时间操作，无数据库连接）
         if file_path and os.path.exists(file_path):
             audio_file = file_path
             print(f"[DEBUG] 使用本地文件: {audio_file}, 大小: {os.path.getsize(audio_file)} bytes")
@@ -268,27 +286,26 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
                 print(f"[DEBUG] B站下载完成: {audio_file}")
             except Exception as e:
                 shutil.rmtree(tmpdir, ignore_errors=True)
-                task.status = "failed"
-                task.error_message = f"音频下载失败: {str(e)}"
-                db.commit()
+                _update_task_status(task_id, status="failed", error_message=f"音频下载失败: {str(e)}")
                 return {"task_id": task_id, "status": "failed", "error": str(e)}
         else:
-            task.status = "failed"
-            task.error_message = "缺少视频地址或文件"
-            db.commit()
+            _update_task_status(task_id, status="failed", error_message="缺少视频地址或文件")
             return {"task_id": task_id, "status": "failed", "error": "missing source"}
 
-        # 获取实际音频时长
-        actual_duration = _get_audio_duration(audio_file)
-        if actual_duration > 0:
-            task.duration = int(actual_duration)
-            db.commit()
-
-        # 1.5 提取纯音频（视频文件太大，直接上传会超时）
+        # 3. 提取纯音频（长时间操作，无数据库连接）
         audio_only_file = _extract_audio_to_mp3(audio_file)
         print(f"[DEBUG] 提取音频: {audio_only_file}, 大小: {os.path.getsize(audio_only_file)} bytes")
 
-        # 2. 调用 GPU Whisper 转录
+        # 4. 获取实际音频时长并更新（短连接）
+        actual_duration = _get_audio_duration(audio_only_file)
+        if actual_duration > 0:
+            _update_task_status(task_id, duration=int(actual_duration))
+        else:
+            actual_duration = _get_audio_duration(audio_file)
+            if actual_duration > 0:
+                _update_task_status(task_id, duration=int(actual_duration))
+
+        # 5. 调用 GPU Whisper 转录（长时间操作，无数据库连接）
         try:
             result = transcribe_audio(audio_only_file)
             print(f"[DEBUG] GPU 返回: {result}")
@@ -297,7 +314,6 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
                 transcript = result.get("transcript", "")
             if not transcript:
                 transcript = result.get("result", "")
-            # GPU 返回 segments 数组的情况
             if not transcript and "segments" in result:
                 lines = []
                 for seg in result["segments"]:
@@ -308,90 +324,75 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
                     if text:
                         lines.append(f"[{mins:02d}:{secs:02d}] {text}")
                 transcript = "\n".join(lines)
-            task.transcript = transcript
             if not transcript:
-                task.error_message = f"Whisper 返回空转录，原始响应: {json.dumps(result, ensure_ascii=False)[:500]}"
+                _update_task_status(
+                    task_id, status="failed",
+                    error_message=f"Whisper 返回空转录，原始响应: {json.dumps(result, ensure_ascii=False)[:500]}"
+                )
+                return {"task_id": task_id, "status": "failed", "error": "empty transcript"}
         except Exception as e:
-            task.status = "failed"
-            task.error_message = f"Whisper 转录失败: {str(e)}"
-            db.commit()
+            _update_task_status(task_id, status="failed", error_message=f"Whisper 转录失败: {str(e)}")
             return {"task_id": task_id, "status": "failed", "error": str(e)}
 
-        # 3. 调用 DeepSeek 生成总结
-        if task.transcript:
-            try:
-                ai_result = generate_notes(task.transcript)
-                task.summary = json.dumps(ai_result.get("summary", {}), ensure_ascii=False)
-                task.notes = ai_result.get("notes", "")
-            except Exception as e:
-                task.status = "failed"
-                task.error_message = f"AI 生成失败: {str(e)}"
-                db.commit()
-                return {"task_id": task_id, "status": "failed", "error": str(e)}
+        # 6. 调用 DeepSeek 生成总结（长时间操作，无数据库连接）
+        try:
+            ai_result = generate_notes(transcript)
+            summary = json.dumps(ai_result.get("summary", {}), ensure_ascii=False)
+            notes = ai_result.get("notes", "")
+        except Exception as e:
+            _update_task_status(task_id, status="failed", error_message=f"AI 生成失败: {str(e)}")
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
 
-        task.status = "done"
+        # 7. 更新任务为完成状态（短连接）
         from datetime import datetime, timezone
-        task.completed_at = datetime.now(timezone.utc)
-        db.commit()
+        _update_task_status(
+            task_id, status="done", transcript=transcript,
+            summary=summary, notes=notes,
+            completed_at=datetime.now(timezone.utc)
+        )
 
-        # 4. 上传任务：补扣或返还时长差额
-        if task.source_type == "upload" and task.duration > 0:
-            actual_minutes = math.ceil(task.duration / 60)
-            estimated = task.consumed_minutes or 1
-            user = db.query(User).filter(User.id == task.user_id).first()
-            if user and actual_minutes != estimated:
-                diff = actual_minutes - estimated
-                if diff > 0:
-                    # 需要补扣
-                    from app.services.credits import deduct_minutes
+        # 8. GPU 转录完成后按实际时长一次性扣费（短连接）
+        task_duration = _get_task_field(task_id, "duration")
+        if task_duration and task_duration > 0:
+            actual_minutes = math.ceil(task_duration / 60)
+            db = next(_get_db())
+            try:
+                task = db.query(Task).filter(Task.id == task_id).first()
+                if not task:
+                    return {"task_id": task_id, "status": "done"}
+
+                user = db.query(User).filter(User.id == task.user_id).first()
+                if user and (task.consumed_minutes or 0) == 0:
+                    source_label = "上传视频" if task.source_type == "upload" else "B站视频"
                     deduct_result = deduct_minutes(
-                        db, user, diff,
+                        db, user, actual_minutes,
                         task_id=task.id,
-                        description=f"上传视频实际时长补扣（预估{estimated}分钟，实际{actual_minutes}分钟）"
+                        description=f"{source_label}《{task.title[:30]}》"
                     )
                     if deduct_result["success"]:
                         task.consumed_minutes = actual_minutes
+                        task.cost_type = deduct_result["cost_type"]
+                        task.monthly_deducted = deduct_result["monthly_deducted"]
+                        task.permanent_deducted = deduct_result["permanent_deducted"]
                         db.commit()
                     else:
-                        # 补扣失败：标记任务为失败并返还已扣的1分钟
-                        print(f"[UploadTask] 补扣失败，余额不足。用户ID={user.id}, 需要补扣={diff}分钟")
+                        print(f"[{source_label}] 扣费失败，余额不足。用户ID={user.id}, 需要={actual_minutes}分钟")
                         task.status = "failed"
-                        task.error_message = f"转录完成但余额不足无法补扣时长（预估{estimated}分钟，实际{actual_minutes}分钟），已返还预估的{estimated}分钟"
-                        # 返还预估的1分钟
-                        user.permanent_minutes = (user.permanent_minutes or 0) + estimated
-                        from app.services.credits import _create_transaction
-                        _create_transaction(
-                            db, user.id, "task_refund", estimated, "permanent",
-                            user.permanent_minutes, task.id,
-                            f"上传视频补扣失败返还（预估{estimated}分钟，实际{actual_minutes}分钟）"
-                        )
+                        task.error_message = f"转录完成但余额不足，需要 {actual_minutes} 分钟，当前余额 {get_user_balance(user)['total']} 分钟"
                         db.commit()
                         return {"task_id": task_id, "status": "failed", "error": task.error_message}
-                elif diff < 0:
-                    # 需要返还
-                    refund = -diff
-                    # 优先返还 permanent（简单处理）
-                    user.permanent_minutes = (user.permanent_minutes or 0) + refund
-                    from app.services.credits import _create_transaction
-                    _create_transaction(
-                        db, user.id, "task_refund", refund, "permanent",
-                        user.permanent_minutes, task.id,
-                        f"上传视频时长返还（预估{estimated}分钟，实际{actual_minutes}分钟）"
-                    )
-                    task.consumed_minutes = actual_minutes
+
+                # 触发首次转录邀请奖励
+                try:
+                    reward_first_task(db, user)
                     db.commit()
+                except Exception as e:
+                    print(f"[InviteReward] Error in transcribe_video: {e}")
+                    db.rollback()
+            finally:
+                db.close()
 
-        # 5. 触发首次转录邀请奖励
-        try:
-            user = db.query(User).filter(User.id == task.user_id).first()
-            if user:
-                reward_first_task(db, user)
-                db.commit()
-        except Exception as e:
-            print(f"[InviteReward] Error in transcribe_video: {e}")
-            db.rollback()
-
-        # 6. 清理临时文件
+        # 9. 清理临时文件
         if audio_file and os.path.exists(audio_file):
             try:
                 os.remove(audio_file)
@@ -404,15 +405,29 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
         return {"task_id": task_id, "status": "done"}
 
     except Exception as e:
-        db.rollback()
+        # 异常处理：更新任务状态并返还时长（短连接）
+        db = next(_get_db())
         try:
             task = db.query(Task).filter(Task.id == task_id).first()
             if task:
                 task.status = "failed"
                 task.error_message = f"任务异常: {str(e)}"
                 db.commit()
-        except:
-            pass
+                if (task.consumed_minutes or 0) > 0 and task.cost_type not in ("refunded", "pending"):
+                    user = db.query(User).filter(User.id == task.user_id).first()
+                    if user:
+                        refund_task_minutes(
+                            db, user,
+                            monthly_refund=task.monthly_deducted or 0,
+                            permanent_refund=task.permanent_deducted or 0,
+                            task_id=task.id,
+                            description=f"任务异常返还《{task.title[:30]}》"
+                        )
+                        task.consumed_minutes = 0
+                        task.monthly_deducted = 0
+                        task.permanent_deducted = 0
+                        task.cost_type = "refunded"
+                        db.commit()
+        finally:
+            db.close()
         raise self.retry(exc=e)
-    finally:
-        db.close()

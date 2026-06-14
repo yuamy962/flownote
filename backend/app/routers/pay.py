@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models import Plan, Order, PaymentLog, User
 from app.services.auth import decode_token
 from app.services.wechat_pay import get_wechat_pay
-from app.services.credits import set_subscription_minutes
+from app.services.credits import set_subscription_minutes, add_monthly_minutes, add_permanent_minutes
 from app.services.invite import reward_purchase
 
 router = APIRouter(prefix="/pay", tags=["pay"])
@@ -252,32 +252,55 @@ async def wechat_notify(request: Request, db: Session = Depends(get_db)):
             user = db.query(User).filter(User.id == order.user_id).first()
             if user:
                 now = datetime.now(timezone.utc)
+
+                # 判断是否为同档位续费（在修改 plan 之前判断）
+                old_plan = user.plan
+                old_monthly = user.monthly_minutes or 0
+                old_plan_expired = not (user.plan_expires_at and user.plan_expires_at > now)
+                is_renewal = old_plan == plan.id and not old_plan_expired
+
                 user.plan = plan.id
 
-                # 有效期：根据套餐的 validity_days 设置
                 validity_days = plan.validity_days or 30
                 if validity_days >= 9999:
-                    # 终身套餐，设置一个极远的未来日期
                     user.plan_expires_at = now + timedelta(days=365*100)
+                elif is_renewal:
+                    # 续费叠加：从旧过期时间续加
+                    user.plan_expires_at = user.plan_expires_at + timedelta(days=validity_days)
                 else:
+                    # 新购/升级/降级/过期续费：从现在开始算
                     user.plan_expires_at = now + timedelta(days=validity_days)
 
-                # 套餐额度：覆盖 monthly_minutes（不是累加）
+                # 套餐额度
                 if plan.duration_minutes and plan.duration_minutes >= 999999:
                     minutes = 999999
                 else:
                     minutes = plan.duration_minutes or 0
 
                 validity_text = f"{validity_days}天" if validity_days < 9999 else "终身"
-                set_subscription_minutes(
-                    db, user.id, minutes,
-                    reference_id=order.id,
-                    description=f"购买{plan.name}，有效期{validity_text}"
-                )
 
-                # 记录 auto_renew（续费订单此字段后续会用到）
-                # 注：首次购买的 auto_renew 由前端 create-order 时的参数决定
-                # 这里不需要额外处理，因为用户可以在个人中心开关
+                # 同档位续费 → 分钟叠加；新购/升级/降级 → 覆盖
+                if is_renewal:
+                    add_monthly_minutes(
+                        db, user.id, minutes,
+                        tx_type="purchase_subscription",
+                        reference_id=order.id,
+                        description=f"续费{plan.name}，+{minutes}分钟，有效期延长{validity_text}"
+                    )
+                else:
+                    # 升级/降级时，旧套餐剩余订阅分钟转为永久分钟（不丢失），但已过期的不转
+                    if old_monthly > 0 and old_plan != "free" and not old_plan_expired:
+                        add_permanent_minutes(
+                            db, user.id, old_monthly,
+                            tx_type="purchase_subscription",
+                            reference_id=order.id,
+                            description=f"升级套餐，旧套餐剩余{old_monthly}分钟转为永久时长"
+                        )
+                    set_subscription_minutes(
+                        db, user.id, minutes,
+                        reference_id=order.id,
+                        description=f"购买{plan.name}，有效期{validity_text}"
+                    )
 
                 print(f"[PayNotify] User {user.id} upgraded to {plan.id}, expires_at={user.plan_expires_at}")
 

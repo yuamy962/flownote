@@ -56,6 +56,8 @@ class Task(Base):
 
     consumed_minutes = Column(Integer, nullable=True)
     cost_type = Column(String(20), default="free")
+    monthly_deducted = Column(Integer, default=0)
+    permanent_deducted = Column(Integer, default=0)
 
     created_at = Column(DateTime(timezone=True), default=utc_now)
     completed_at = Column(DateTime(timezone=True), nullable=True)

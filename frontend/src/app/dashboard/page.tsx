@@ -144,6 +144,13 @@ export default function Dashboard() {
               <a href="/dashboard" className="px-3 py-1.5 text-blue-600 bg-blue-50 rounded-lg font-medium">工作台</a>
               <a href="/dashboard/history" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">历史记录</a>
               <a href="/dashboard/profile" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">用户中心</a>
+              <a
+                href="/pricing"
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg font-medium hover:from-amber-600 hover:to-orange-600 transition-all shadow-sm"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                购买套餐
+              </a>
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
@@ -155,29 +162,29 @@ export default function Dashboard() {
 
       <main className="max-w-3xl mx-auto px-4 py-8">
         {/* 余额提示 */}
-        {userBalance && (
-          <div className="mb-6 flex items-center justify-between bg-white rounded-xl border border-gray-100 p-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5 text-sm">
-                <Calendar className="w-4 h-4 text-blue-600" />
-                <span className="text-gray-500">订阅：</span>
-                <span className="font-bold text-blue-600">{userBalance.monthly} 分钟</span>
-              </div>
-              <div className="w-px h-4 bg-gray-200" />
-              <div className="flex items-center gap-1.5 text-sm">
-                <Gem className="w-4 h-4 text-amber-600" />
-                <span className="text-gray-500">永久：</span>
-                <span className="font-bold text-amber-600">{userBalance.permanent} 分钟</span>
-              </div>
+        <div className="mb-6 flex items-center justify-between bg-white rounded-xl border border-gray-100 p-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5 text-sm">
+              <Calendar className="w-4 h-4 text-blue-600" />
+              <span className="text-gray-500">订阅：</span>
+              <span className="font-bold text-blue-600">{userBalance ? `${userBalance.monthly} 分钟` : '--'}</span>
             </div>
-            {userBalance.plan_expires_at && (
+            <div className="w-px h-4 bg-gray-200" />
+            <div className="flex items-center gap-1.5 text-sm">
+              <Gem className="w-4 h-4 text-amber-600" />
+              <span className="text-gray-500">永久：</span>
+              <span className="font-bold text-amber-600">{userBalance ? `${userBalance.permanent} 分钟` : '--'}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {userBalance?.plan_expires_at && (
               <span className="text-xs text-gray-400">
                 {userBalance.plan === 'free' ? '' : `${userBalance.plan} 套餐`}
                 {userBalance.plan !== 'free' && userBalance.plan_expires_at ? ` · 有效期至 ${new Date(userBalance.plan_expires_at).toLocaleDateString()}` : ''}
               </span>
             )}
           </div>
-        )}
+        </div>
 
         <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-xl">
           <button

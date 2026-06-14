@@ -21,6 +21,10 @@ celery_app.conf.update(
             "task": "celery_worker.check_expired_subscriptions",
             "schedule": 3600.0,  # 每小时检查一次
         },
+        "check-expired-orders": {
+            "task": "celery_worker.check_expired_orders",
+            "schedule": 3600.0,  # 每小时检查一次
+        },
     },
 )
 
@@ -83,6 +87,35 @@ def check_expired_subscriptions():
         db.commit()
     except Exception as e:
         print(f"[SubscriptionCheck] Error: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+@celery_app.task
+def check_expired_orders():
+    """检查超时未支付的订单，标记为 expired"""
+    from app.database import SessionLocal
+    from app.models import Order
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        expire_threshold = now - timedelta(hours=24)
+
+        expired_orders = db.query(Order).filter(
+            Order.status == "pending",
+            Order.created_at <= expire_threshold,
+        ).all()
+
+        for order in expired_orders:
+            order.status = "expired"
+            print(f"[OrderExpire] Order {order.id} ({order.out_trade_no}) marked as expired")
+
+        db.commit()
+        print(f"[OrderExpire] Total {len(expired_orders)} orders expired")
+    except Exception as e:
+        print(f"[OrderExpire] Error: {e}")
         db.rollback()
     finally:
         db.close()

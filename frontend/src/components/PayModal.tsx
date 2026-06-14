@@ -19,6 +19,14 @@ export default function PayModal({ order, onClose, onSuccess }: PayModalProps) {
   const [status, setStatus] = useState<'pending' | 'paid' | 'timeout'>('pending');
   const [pollCount, setPollCount] = useState(0);
 
+  // 当 order 变化时（创建了新订单），重置状态
+  useEffect(() => {
+    if (order) {
+      setStatus('pending');
+      setPollCount(0);
+    }
+  }, [order?.order_id]);
+
   const checkStatus = useCallback(async () => {
     if (!order || status !== 'pending') return;
     try {

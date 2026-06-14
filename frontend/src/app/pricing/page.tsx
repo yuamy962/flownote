@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Video, Check, Zap, Calendar, ArrowRight } from 'lucide-react';
+import { Video, Check, Zap, ArrowRight } from 'lucide-react';
 import PayModal from '@/components/PayModal';
 
 interface Plan {
@@ -29,7 +29,6 @@ export default function Pricing() {
       .then((r) => r.json())
       .then((json) => {
         if (json.code === 0) {
-          // 过滤掉已下架的套餐
           const active = (json.data || []).filter((p: Plan) => p.id !== 'unlimited');
           setPlans(active);
         }
@@ -181,6 +180,8 @@ export default function Pricing() {
                 const isPro = plan.id.includes('pro');
                 const compare = competitorPrice[plan.id];
                 const isYearly = plan.validity_days >= 365;
+                // 年付显示月均价格
+                const monthlyPrice = isYearly ? (plan.price_yuan / 12).toFixed(1) : null;
                 return (
                   <div
                     key={plan.id}
@@ -203,6 +204,11 @@ export default function Pricing() {
                         {' '}
                         / {isYearly ? '年' : '月'}
                       </span>
+                      {isYearly && monthlyPrice && (
+                        <p className="text-sm text-gray-400 mt-1">
+                          约 ¥{monthlyPrice}/月，年付更划算
+                        </p>
+                      )}
                     </div>
 
                     <div className="bg-green-50 rounded-lg p-3 mb-4">

@@ -12,7 +12,9 @@ from app.services.deepseek import generate_notes
 from app.services.auth import decode_token
 from app.services.credits import deduct_minutes, get_user_balance
 from app.services.invite import reward_first_task
+from app.services.video_utils import get_video_duration
 from app.tasks import transcribe_video
+import math
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -72,16 +74,33 @@ async def create_task(
     duration = result.get("duration", 0)
     estimated_minutes = math.ceil(duration / 60) if duration else 1
 
-    # 扣费检查（字幕直出也需要扣费）
-    deduct_result = deduct_minutes(
-        db, user, estimated_minutes,
-        description=f"转录《{result['title'][:30]}》"
-    )
-    if not deduct_result["success"]:
-        raise HTTPException(
-            status_code=402,
-            detail=f"时长不足，需要 {estimated_minutes} 分钟，当前余额 {get_user_balance(user)['total']} 分钟"
+    if result["has_subtitle"]:
+        # 有字幕：直接 AI 生成，按 B站时长扣费
+        deduct_result = deduct_minutes(
+            db, user, estimated_minutes,
+            description=f"转录《{result['title'][:30]}》"
         )
+        if not deduct_result["success"]:
+            raise HTTPException(
+                status_code=402,
+                detail=f"时长不足，需要 {estimated_minutes} 分钟，当前余额 {get_user_balance(user)['total']} 分钟"
+            )
+        consumed_minutes = estimated_minutes
+        cost_type = deduct_result["cost_type"]
+        monthly_deducted = deduct_result["monthly_deducted"]
+        permanent_deducted = deduct_result["permanent_deducted"]
+    else:
+        # 无字幕：需要 GPU 转录，创建时检查余额但不扣费，完成后按实际时长扣费
+        balance = get_user_balance(user)
+        if balance["total"] < estimated_minutes:
+            raise HTTPException(
+                status_code=402,
+                detail=f"时长不足，预估需要 {estimated_minutes} 分钟，当前余额 {balance['total']} 分钟"
+            )
+        consumed_minutes = 0
+        cost_type = "pending"
+        monthly_deducted = 0
+        permanent_deducted = 0
 
     task = Task(
         user_id=user.id,
@@ -92,8 +111,10 @@ async def create_task(
         status="done" if result["has_subtitle"] else "pending",
         processing_path="subtitle" if result["has_subtitle"] else "gpu",
         transcript=result["subtitle_text"] if result["has_subtitle"] else None,
-        consumed_minutes=estimated_minutes,
-        cost_type=deduct_result["cost_type"],
+        consumed_minutes=consumed_minutes,
+        cost_type=cost_type,
+        monthly_deducted=monthly_deducted,
+        permanent_deducted=permanent_deducted,
     )
 
     if result["has_subtitle"] and result["subtitle_text"]:
@@ -103,13 +124,27 @@ async def create_task(
             task.notes = ai_result.get("notes", "")
         except Exception as e:
             task.error_message = f"AI 生成失败: {str(e)}"
+            # AI 生成失败时返还已扣时长
+            if task.consumed_minutes and task.consumed_minutes > 0:
+                from app.services.credits import refund_task_minutes
+                refund_task_minutes(
+                    db, user,
+                    monthly_refund=task.monthly_deducted or 0,
+                    permanent_refund=task.permanent_deducted or 0,
+                    task_id=task.id,
+                    description=f"AI生成失败返还《{task.title[:30]}》"
+                )
+                task.consumed_minutes = 0
+                task.monthly_deducted = 0
+                task.permanent_deducted = 0
+                task.cost_type = "refunded"
 
     db.add(task)
     db.commit()
     db.refresh(task)
 
     # 字幕直出且成功 → 触发首次转录邀请奖励
-    if result["has_subtitle"] and task.status == "done":
+    if result["has_subtitle"] and task.status == "done" and not task.error_message:
         try:
             reward_first_task(db, user)
             db.commit()
@@ -149,6 +184,7 @@ def get_task(task_id: str, user: User = Depends(get_current_user), db: Session =
             "title": task.title,
             "duration": task.duration,
             "status": task.status,
+            "processing_path": task.processing_path,
             "transcript": task.transcript,
             "summary": json.loads(task.summary) if task.summary else None,
             "notes": task.notes,
@@ -207,35 +243,34 @@ async def upload_task(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """上传本地视频文件，创建转录任务"""
-    # 本地上传暂时无法预知时长，先扣 1 分钟保底，转录完成后按实际时长补扣或返还
-    estimated_minutes = 1
-
-    deduct_result = deduct_minutes(
-        db, user, estimated_minutes,
-        description=f"上传视频《{file.filename[:30]}》"
-    )
-    if not deduct_result["success"]:
-        raise HTTPException(
-            status_code=402,
-            detail=f"时长不足，当前余额 {get_user_balance(user)['total']} 分钟"
-        )
-
+    """上传本地视频文件，创建转录任务。上传时获取时长并检查余额，转录完成后按实际时长一次性扣费。"""
     suffix = os.path.splitext(file.filename or "video.mp4")[1]
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
+
+    # 获取视频时长并检查余额
+    duration = get_video_duration(tmp_path)
+    if duration > 0:
+        estimated_minutes = math.ceil(duration / 60)
+        balance = get_user_balance(user)
+        if balance["total"] < estimated_minutes:
+            os.remove(tmp_path)
+            raise HTTPException(
+                status_code=402,
+                detail=f"时长不足，需要 {estimated_minutes} 分钟，当前余额 {balance['total']} 分钟"
+            )
 
     task = Task(
         user_id=user.id,
         source_type="upload",
         source_url="",
         title=file.filename or "上传视频",
-        duration=0,
+        duration=int(duration) if duration > 0 else 0,
         status="pending",
         processing_path="gpu",
-        consumed_minutes=estimated_minutes,
-        cost_type=deduct_result["cost_type"],
+        consumed_minutes=0,
+        cost_type="pending",
     )
     db.add(task)
     db.commit()

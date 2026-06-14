@@ -155,7 +155,8 @@ async def parse_bilibili_url(url: str) -> dict:
         duration = info.get("duration", 0)
 
     title = info.get("title", "")
-    if part_title:
+    # 如果主标题已经包含分P标题，避免重复
+    if part_title and part_title not in title:
         title = f"{title} - {part_title}"
 
     pic = info.get("pic", "")

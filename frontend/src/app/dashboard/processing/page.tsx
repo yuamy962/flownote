@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Video, Check, Loader2, Clock, ArrowLeft, XCircle } from 'lucide-react';
+import { Video, Check, Loader2, Clock, ArrowLeft, XCircle, Timer } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 
 interface TaskStep {
@@ -17,6 +17,31 @@ const steps: TaskStep[] = [
   { label: '完成', description: '笔记已生成' },
 ];
 
+/** 根据视频时长和处理路径计算预估总秒数 */
+function estimateTotalSeconds(duration: number, processingPath: string): number {
+  if (processingPath === 'subtitle') {
+    return 15;
+  }
+  const minutes = Math.ceil(duration / 60);
+  const estimatedMinutes = Math.max(1, Math.ceil(minutes * 0.2));
+  return estimatedMinutes * 60;
+}
+
+/** 格式化时长为 mm:ss */
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/** 格式化预估时间显示 */
+function formatEstimate(seconds: number): string {
+  if (seconds <= 30) return '约 10 秒';
+  const m = Math.ceil(seconds / 60);
+  if (m < 2) return '约 1-2 分钟';
+  return `约 ${m}-${m + 2} 分钟`;
+}
+
 export default function ProcessingPage() {
   const searchParams = useSearchParams();
   const taskId = searchParams.get('id');
@@ -28,6 +53,9 @@ export default function ProcessingPage() {
   const [error, setError] = useState('');
   const [status, setStatus] = useState<'processing' | 'done' | 'failed'>('processing');
   const [userBalance, setUserBalance] = useState<{ monthly: number; permanent: number; total: number } | null>(null);
+  const [processingPath, setProcessingPath] = useState<string>('');
+  const [estimatedTotal, setEstimatedTotal] = useState<number>(0);
+  const [taskDuration, setTaskDuration] = useState<number>(0);
 
   // 计时器
   useEffect(() => {
@@ -67,6 +95,14 @@ export default function ProcessingPage() {
         setVideoTitle(task.title || '处理中...');
         setStatus(task.status);
 
+        // 记录处理路径和视频时长（用于预估时间）
+        if (task.processing_path && !processingPath) {
+          setProcessingPath(task.processing_path);
+        }
+        if (task.duration && !taskDuration) {
+          setTaskDuration(task.duration);
+        }
+
         if (task.status === 'done') {
           setProgress(100);
           setCurrentStep(steps.length - 1);
@@ -82,12 +118,26 @@ export default function ProcessingPage() {
           return;
         }
 
-        // 模拟进度
+        // 计算预估总时间
+        const path = task.processing_path || 'gpu';
+        const duration = task.duration || 0;
+        const totalEstimated = estimateTotalSeconds(duration, path);
+        setEstimatedTotal(totalEstimated);
+
+        // 基于已用时间和预估总时间计算进度（更真实的进度）
         pollCount++;
-        const simulatedProgress = Math.min(pollCount * 15, 85);
-        setProgress(simulatedProgress);
-        setCurrentStep(Math.min(Math.floor((simulatedProgress / 100) * (steps.length - 1)), steps.length - 2));
-      } catch (e) {
+        let calculatedProgress: number;
+        if (path === 'subtitle') {
+          calculatedProgress = Math.min(pollCount * 30, 95);
+        } else {
+          // GPU 路径：基于已用时间 / 预估时间，但不超过 95%
+          const timeBasedProgress = totalEstimated > 0 ? (elapsed / totalEstimated) * 100 : 0;
+          const pollBasedProgress = pollCount * 12;
+          calculatedProgress = Math.min(Math.max(timeBasedProgress, pollBasedProgress), 95);
+        }
+        setProgress(calculatedProgress);
+        setCurrentStep(Math.min(Math.floor((calculatedProgress / 100) * (steps.length - 1)), steps.length - 2));
+      } catch {
         // ignore poll errors
       }
     };
@@ -95,17 +145,10 @@ export default function ProcessingPage() {
     poll();
     const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
-  }, [taskId]);
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
+  }, [taskId, elapsed, processingPath, taskDuration]);
 
   const getStepStatus = (index: number) => {
     if (status === 'failed') {
-      // 失败时：第一步解析总是完成（因为创建任务前就已解析），其余步骤不再显示假的"完成"
       if (index === 0) return 'completed';
       if (index === currentStep) return 'failed';
       return 'pending';
@@ -114,6 +157,9 @@ export default function ProcessingPage() {
     if (index === currentStep) return 'active';
     return 'pending';
   };
+
+  const remainingSeconds = Math.max(0, estimatedTotal - elapsed);
+  const showEstimate = estimatedTotal > 0 && status === 'processing';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -154,14 +200,32 @@ export default function ProcessingPage() {
             </div>
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-600 rounded-full transition-all duration-300"
+                className="h-full bg-blue-600 rounded-full transition-all duration-500"
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <div className="flex items-center gap-1 mt-2 text-xs text-gray-400">
-              <Clock className="w-3 h-3" />
-              已用时 {formatTime(elapsed)}
+            <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
+              <div className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                已用时 {formatTime(elapsed)}
+              </div>
+              {showEstimate && (
+                <div className="flex items-center gap-1">
+                  <Timer className="w-3 h-3" />
+                  {remainingSeconds > 0
+                    ? `预计还需 ${formatTime(remainingSeconds)}`
+                    : '即将完成'}
+                </div>
+              )}
             </div>
+            {showEstimate && (
+              <div className="mt-2 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5 inline-flex items-center gap-1">
+                <Timer className="w-3 h-3" />
+                总预估时间：{formatEstimate(estimatedTotal)}
+                {processingPath === 'subtitle' && '（有字幕，秒出结果）'}
+                {processingPath === 'gpu' && '（GPU 转录中）'}
+              </div>
+            )}
           </div>
         )}
 
