@@ -53,15 +53,6 @@ def list_plans(db: Session = Depends(get_db)):
     }
 
 
-# ==================== 测试价映射（上线后删除）====================
-TEST_PRICE_MAP = {
-    "basic": 150,       # 标价¥15，测试扣¥1.5
-    "pro": 350,         # 标价¥35，测试扣¥3.5
-    "basic_year": 690,  # 标价¥69，测试扣¥6.9
-    "pro_year": 2390,   # 标价¥239，测试扣¥23.9
-}
-
-
 # ==================== 创建订单 + 获取支付二维码 ====================
 
 @router.post("/create-order")
@@ -75,8 +66,7 @@ def create_order(
     if not plan:
         raise HTTPException(status_code=400, detail="套餐不存在")
 
-    # 测试期间：实际扣款为测试价，但展示用原价
-    actual_price_cent = TEST_PRICE_MAP.get(plan_id, plan.price_cent)
+    actual_price_cent = plan.price_cent
 
     out_trade_no = _generate_out_trade_no()
     order = Order(

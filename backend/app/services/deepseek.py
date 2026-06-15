@@ -30,8 +30,13 @@ def generate_notes(transcript: str) -> dict:
     if not settings.DEEPSEEK_API_KEY:
         return _mock_result(transcript)
 
-    # 转录文本截断到 12000 字符，保留更多内容
-    trimmed = transcript[:12000] if transcript else ""
+    # 转录文本截断策略：取首尾各 6000 字符，保留开头和结尾的关键信息
+    if transcript and len(transcript) > 12000:
+        head = transcript[:6000]
+        tail = transcript[-6000:]
+        trimmed = head + "\n\n[...中间部分已省略...]\n\n" + tail
+    else:
+        trimmed = transcript or ""
 
     with httpx.Client(timeout=180.0) as client:
         resp = client.post(
@@ -47,7 +52,7 @@ def generate_notes(transcript: str) -> dict:
                     {"role": "user", "content": f"以下是视频转录文本（可能截断），请生成高质量总结和笔记：\n\n{trimmed}"},
                 ],
                 "temperature": 0.5,
-                "max_tokens": 4000,
+                "max_tokens": 6000,
                 "response_format": {"type": "json_object"},
             },
         )

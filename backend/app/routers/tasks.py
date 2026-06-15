@@ -124,20 +124,7 @@ async def create_task(
             task.notes = ai_result.get("notes", "")
         except Exception as e:
             task.error_message = f"AI 生成失败: {str(e)}"
-            # AI 生成失败时返还已扣时长
-            if task.consumed_minutes and task.consumed_minutes > 0:
-                from app.services.credits import refund_task_minutes
-                refund_task_minutes(
-                    db, user,
-                    monthly_refund=task.monthly_deducted or 0,
-                    permanent_refund=task.permanent_deducted or 0,
-                    task_id=task.id,
-                    description=f"AI生成失败返还《{task.title[:30]}》"
-                )
-                task.consumed_minutes = 0
-                task.monthly_deducted = 0
-                task.permanent_deducted = 0
-                task.cost_type = "refunded"
+            task.status = "done"
 
     db.add(task)
     db.commit()
@@ -229,6 +216,7 @@ def list_tasks(
                     "source_type": t.source_type,
                     "consumed_minutes": t.consumed_minutes,
                     "cost_type": t.cost_type,
+                    "summary": (lambda s: s.get("overview", "")[:50] if s else "")(json.loads(t.summary) if t.summary else None),
                     "created_at": t.created_at.isoformat() if t.created_at else None,
                 }
                 for t in tasks
@@ -298,3 +286,23 @@ def delete_task(task_id: str, user: User = Depends(get_current_user), db: Sessio
     db.delete(task)
     db.commit()
     return {"code": 0, "message": "已删除"}
+
+
+@router.put("/{task_id}/notes")
+def update_task_notes(
+    task_id: str,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = db.query(Task).filter(Task.id == task_id, Task.user_id == user.id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    notes = payload.get("notes", "")
+    if not isinstance(notes, str):
+        raise HTTPException(status_code=400, detail="notes 必须为字符串")
+    task.notes = notes
+    if task.error_message and task.error_message.startswith("AI 生成失败"):
+        task.error_message = None
+    db.commit()
+    return {"code": 0, "message": "笔记已更新"}

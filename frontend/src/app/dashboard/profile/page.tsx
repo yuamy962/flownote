@@ -179,6 +179,7 @@ export default function ProfilePage() {
             <nav className="hidden sm:flex items-center gap-1 text-sm">
               <a href="/dashboard" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">工作台</a>
               <a href="/dashboard/history" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">历史记录</a>
+              <a href="/dashboard/history" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">笔记</a>
               <a href="/dashboard/profile" className="px-3 py-1.5 text-blue-600 bg-blue-50 rounded-lg font-medium">用户中心</a>
               <a
                 href="/pricing"

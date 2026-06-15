@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     WECHAT_APP_ID: str = ""
     WECHAT_APP_SECRET: str = ""
 
+    # Server酱通知配置（https://sct.ftqq.com/）
+    SERVERCHAN_KEY: str = ""
+
+    # Admin 密码
+    ADMIN_PASSWORD: str = "flownote_admin_2026"
+
     class Config:
         env_file = ".env"
 

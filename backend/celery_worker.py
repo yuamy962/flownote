@@ -19,11 +19,15 @@ celery_app.conf.update(
     beat_schedule={
         "check-subscription-expiry": {
             "task": "celery_worker.check_expired_subscriptions",
-            "schedule": 3600.0,  # 每小时检查一次
+            "schedule": 3600.0,
         },
         "check-expired-orders": {
             "task": "celery_worker.check_expired_orders",
-            "schedule": 3600.0,  # 每小时检查一次
+            "schedule": 3600.0,
+        },
+        "health-check": {
+            "task": "celery_worker.system_health_check",
+            "schedule": 300.0,
         },
     },
 )
@@ -123,3 +127,13 @@ def check_expired_orders():
 
 if __name__ == "__main__":
     celery_app.start()
+
+
+@celery_app.task
+def system_health_check():
+    """每5分钟检查系统健康状态，异常时通过Server酱推送微信通知"""
+    from app.services.monitor import check_and_notify
+    result = check_and_notify()
+    if result["overall"] != "healthy":
+        print(f"[HealthCheck] 系统异常: {result}")
+    return result

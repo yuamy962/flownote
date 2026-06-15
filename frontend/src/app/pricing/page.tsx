@@ -89,8 +89,7 @@ export default function Pricing() {
 
   const formatMinutes = (m: number) => {
     if (m >= 999999) return '不限';
-    if (m >= 60) return `${Math.floor(m / 60)}小时${m % 60}分钟`;
-    return `${m}分钟`;
+    return `${m.toLocaleString('zh-CN')}分钟`;
   };
 
   const monthlyPlans = plans.filter((p) => p.validity_days && p.validity_days <= 31);
@@ -124,12 +123,21 @@ export default function Pricing() {
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">
-            {user && (
-              <span className="text-gray-500">
-                订阅：{formatMinutes(user.monthly_minutes || 0)} / 永久：{formatMinutes(user.permanent_minutes || 0)}
-              </span>
+            {user ? (
+              <>
+                <span className="text-gray-500 hidden sm:inline">
+                  订阅：{formatMinutes(user.monthly_minutes || 0)} / 永久：{formatMinutes(user.permanent_minutes || 0)}
+                </span>
+                <a href="/pricing" className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg font-medium">升级</a>
+              </>
+            ) : (
+              <>
+                <a href="/login" className="text-gray-600 hover:text-gray-900">登录</a>
+                <a href="/login" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+                  免费开始
+                </a>
+              </>
             )}
-            <a href="/pricing" className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg font-medium">升级</a>
           </div>
         </div>
       </header>

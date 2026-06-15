@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { Video, Check, Loader2, Clock, ArrowLeft, XCircle, Timer } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 
@@ -42,7 +42,7 @@ function formatEstimate(seconds: number): string {
   return `约 ${m}-${m + 2} 分钟`;
 }
 
-export default function ProcessingPage() {
+function ProcessingPageInner() {
   const searchParams = useSearchParams();
   const taskId = searchParams.get('id');
 
@@ -303,5 +303,20 @@ export default function ProcessingPage() {
         </p>
       </main>
     </div>
+  );
+}
+
+export default function ProcessingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 text-blue-600 mx-auto mb-3 animate-spin" />
+          <p className="text-gray-500">加载中...</p>
+        </div>
+      </div>
+    }>
+      <ProcessingPageInner />
+    </Suspense>
   );
 }

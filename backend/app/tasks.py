@@ -340,8 +340,15 @@ def transcribe_video(self, task_id: str, source_url: str = None, file_path: str 
             summary = json.dumps(ai_result.get("summary", {}), ensure_ascii=False)
             notes = ai_result.get("notes", "")
         except Exception as e:
-            _update_task_status(task_id, status="failed", error_message=f"AI 生成失败: {str(e)}")
-            return {"task_id": task_id, "status": "failed", "error": str(e)}
+            summary = None
+            notes = ""
+            _update_task_status(
+                task_id, status="done", transcript=transcript,
+                summary=summary, notes=notes,
+                error_message=f"AI 生成失败: {str(e)}"
+            )
+            from datetime import datetime, timezone
+            _update_task_status(task_id, completed_at=datetime.now(timezone.utc))
 
         # 7. 更新任务为完成状态（短连接）
         from datetime import datetime, timezone

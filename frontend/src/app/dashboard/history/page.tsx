@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Video, Clock, CheckCircle, XCircle, Loader2, Trash2, ExternalLink, FileText, Zap } from 'lucide-react';
+import { Video, Clock, CheckCircle, XCircle, Loader2, Trash2, FileText, Zap } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -12,6 +12,7 @@ interface Task {
   created_at: string;
   consumed_minutes: number;
   cost_type: string;
+  summary?: string;
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof Loader2 }> = {
@@ -84,6 +85,7 @@ export default function HistoryPage() {
             <nav className="hidden sm:flex items-center gap-1 text-sm">
               <a href="/dashboard" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">工作台</a>
               <a href="/dashboard/history" className="px-3 py-1.5 text-blue-600 bg-blue-50 rounded-lg font-medium">历史记录</a>
+              <a href="/dashboard/history" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">笔记</a>
               <a href="/dashboard/profile" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">用户中心</a>
               <a
                 href="/pricing"
@@ -147,7 +149,19 @@ export default function HistoryPage() {
                       <span className="text-sm font-bold text-blue-300">{task.title?.[0] || '▶'}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-medium text-gray-900 truncate">{task.title}</h3>
+                      {task.status === 'done' ? (
+                        <a
+                          href={`/dashboard/result?id=${task.id}`}
+                          className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline truncate block"
+                        >
+                          {task.title}
+                        </a>
+                      ) : (
+                        <h3 className="text-sm font-medium text-gray-900 truncate">{task.title}</h3>
+                      )}
+                      {task.summary && (
+                        <p className="text-xs text-gray-400 mt-0.5 truncate">{task.summary}</p>
+                      )}
                       <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5 flex-wrap">
                         <span>{task.source_type === 'bilibili' ? 'B站' : '上传'}</span>
                         <span>·</span>
@@ -171,10 +185,9 @@ export default function HistoryPage() {
                       {task.status === 'done' && (
                         <a
                           href={`/dashboard/result?id=${task.id}`}
-                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="查看结果"
+                          className="px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors font-medium"
                         >
-                          <ExternalLink className="w-4 h-4" />
+                          查看
                         </a>
                       )}
                       <button

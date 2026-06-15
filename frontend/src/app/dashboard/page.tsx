@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { Video, Upload, Link, Lock, Clock, Zap, AlertCircle, FileText, X, Gem, Calendar } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 function UserInfo() {
   const [user, setUser] = useState<any>(null);
@@ -49,10 +49,11 @@ function UserInfo() {
   );
 }
 
-export default function Dashboard() {
+function DashboardInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'link' | 'upload'>('link');
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(searchParams.get('url') || '');
   const [videoInfo, setVideoInfo] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -86,7 +87,46 @@ export default function Dashboard() {
 
   useEffect(() => {
     refreshBalance();
+    // 如果 URL 参数中有视频链接，自动解析
+    const urlParam = searchParams.get('url');
+    if (urlParam) {
+      setUrl(urlParam);
+      // 延迟一点执行解析，确保状态已更新
+      setTimeout(() => {
+        handleParseAuto(urlParam);
+      }, 100);
+    }
   }, []);
+
+  const handleParseAuto = async (targetUrl: string) => {
+    if (!targetUrl.trim()) return;
+    setLoading(true);
+    setVideoInfo(null);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/tasks/parse-bilibili?url=${encodeURIComponent(targetUrl.trim())}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = JSON.parse(text);
+      } catch {
+        alert('解析失败，服务器返回非 JSON: ' + text.slice(0, 200));
+        setLoading(false);
+        return;
+      }
+      if (json.code !== 0) {
+        alert(json.message || json.detail || '解析失败');
+        setLoading(false);
+        return;
+      }
+      setVideoInfo(json.data);
+    } catch (err: any) {
+      alert('网络错误: ' + err.message);
+    }
+    setLoading(false);
+  };
 
   const handleParse = async () => {
     if (!url.trim()) return;
@@ -143,6 +183,7 @@ export default function Dashboard() {
             <nav className="hidden sm:flex items-center gap-1 text-sm">
               <a href="/dashboard" className="px-3 py-1.5 text-blue-600 bg-blue-50 rounded-lg font-medium">工作台</a>
               <a href="/dashboard/history" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">历史记录</a>
+              <a href="/dashboard/history" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">笔记</a>
               <a href="/dashboard/profile" className="px-3 py-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-50">用户中心</a>
               <a
                 href="/pricing"
@@ -416,5 +457,20 @@ export default function Dashboard() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-gray-500">加载中...</p>
+        </div>
+      </div>
+    }>
+      <DashboardInner />
+    </Suspense>
   );
 }
