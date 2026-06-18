@@ -370,7 +370,7 @@ export default function Home() {
               <h4 className="font-semibold text-gray-900 text-sm mb-4">联系我们</h4>
               <ul className="space-y-2.5">
                 <li><span className="text-sm text-gray-500">微信：flownote_cn</span></li>
-                <li><span className="text-sm text-gray-500">邮箱：hi@flownote.cn</span></li>
+                <li><span className="text-sm text-gray-500">邮箱：flownote@163.com</span></li>
               </ul>
             </div>
           </div>
